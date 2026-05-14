@@ -10,6 +10,8 @@ class AdminUserSeeder extends Seeder
 {
     public function run(): void
     {
+        $this->call(RolePermissionSeeder::class);
+
         $admin = User::updateOrCreate(
             ['email' => 'john.adrian.bacon2@gmail.com'],
             [
