@@ -24,6 +24,10 @@ Route::prefix('v1')->group(function () {
 
     // Protected routes
     Route::middleware('auth')->group(function () {
+        // Categories — write routes (read routes are public above)
+        Route::post('/categories', [CategoryController::class, 'store']);
+        Route::delete('/categories/{category}', [CategoryController::class, 'destroy']);
+
         // Products — write routes (read routes are public above)
         Route::post('/products', [ProductController::class, 'store']);
         Route::put('/products/{product}', [ProductController::class, 'update']);

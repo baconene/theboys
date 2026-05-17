@@ -3,7 +3,7 @@ import { ref, computed } from 'vue'
 import { Head, router } from '@inertiajs/vue3'
 import { toast } from 'vue-sonner'
 import api from '@/utils/api'
-import { Plus, Pencil, Trash2, X, PlusCircle, MinusCircle, UtensilsCrossed } from 'lucide-vue-next'
+import { Plus, Pencil, Trash2, X, PlusCircle, MinusCircle, UtensilsCrossed, FolderPlus, Check } from 'lucide-vue-next'
 
 defineOptions({
     layout: {
@@ -25,6 +25,9 @@ interface Product {
 }
 
 const props = defineProps<{ products: Product[]; categories: Category[]; ingredients: Ingredient[] }>()
+
+// ─── Local categories (updated live without page reload) ──────────────────────
+const localCategories = ref<Category[]>([...props.categories])
 
 // ─── State ───────────────────────────────────────────────────────────────────
 const search        = ref('')
@@ -120,6 +123,29 @@ const submitForm = async () => {
         toast.error(errors ? Object.values(errors).flat().join(' ') : (err.response?.data?.message ?? 'Failed to save'))
     } finally {
         submitting.value = false
+    }
+}
+
+// ─── New Category ─────────────────────────────────────────────────────────────
+const showNewCat  = ref(false)
+const newCatName  = ref('')
+const addingCat   = ref(false)
+
+const submitNewCategory = async () => {
+    if (!newCatName.value.trim()) return
+    addingCat.value = true
+    try {
+        const res = await api.post('/api/v1/categories', { name: newCatName.value.trim() })
+        const created: Category = { id: res.data.id, name: res.data.name }
+        localCategories.value.push(created)
+        form.value.category_id = created.id
+        newCatName.value  = ''
+        showNewCat.value  = false
+        toast.success(`Category "${created.name}" created`)
+    } catch (err: any) {
+        toast.error(err.response?.data?.message ?? 'Failed to create category')
+    } finally {
+        addingCat.value = false
     }
 }
 
@@ -247,11 +273,41 @@ const doDelete = async () => {
                             </div>
                             <div>
                                 <label class="text-xs font-medium text-muted-foreground block mb-1.5">Category *</label>
-                                <select v-model="form.category_id"
-                                    class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
-                                    <option :value="0" disabled>Select category…</option>
-                                    <option v-for="c in categories" :key="c.id" :value="c.id">{{ c.name }}</option>
-                                </select>
+                                <div class="flex gap-2">
+                                    <select v-model="form.category_id"
+                                        class="flex-1 rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
+                                        <option :value="0" disabled>Select category…</option>
+                                        <option v-for="c in localCategories" :key="c.id" :value="c.id">{{ c.name }}</option>
+                                    </select>
+                                    <button type="button" @click="showNewCat = !showNewCat"
+                                        :class="['rounded-lg border px-2.5 py-2 hover:bg-muted transition-colors', showNewCat ? 'bg-primary/10 border-primary text-primary' : 'text-muted-foreground']"
+                                        title="Add new category">
+                                        <FolderPlus class="h-4 w-4" />
+                                    </button>
+                                </div>
+                                <!-- Inline new category form -->
+                                <Transition name="slide">
+                                    <div v-if="showNewCat" class="mt-2 flex gap-2">
+                                        <input
+                                            v-model="newCatName"
+                                            type="text"
+                                            placeholder="New category name…"
+                                            @keyup.enter="submitNewCategory"
+                                            @keyup.escape="showNewCat = false"
+                                            class="flex-1 rounded-lg border bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                                            autofocus
+                                        />
+                                        <button type="button" @click="submitNewCategory" :disabled="addingCat || !newCatName.trim()"
+                                            class="rounded-lg bg-primary px-3 py-1.5 text-xs font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 flex items-center gap-1">
+                                            <Check class="h-3.5 w-3.5" />
+                                            {{ addingCat ? 'Adding…' : 'Add' }}
+                                        </button>
+                                        <button type="button" @click="showNewCat = false"
+                                            class="rounded-lg border px-2.5 py-1.5 text-xs hover:bg-muted">
+                                            <X class="h-3.5 w-3.5" />
+                                        </button>
+                                    </div>
+                                </Transition>
                             </div>
                             <div>
                                 <label class="text-xs font-medium text-muted-foreground block mb-1.5">SKU</label>
@@ -366,4 +422,6 @@ const doDelete = async () => {
 <style scoped>
 .fade-enter-active, .fade-leave-active { transition: opacity 0.15s; }
 .fade-enter-from, .fade-leave-to { opacity: 0; }
+.slide-enter-active, .slide-leave-active { transition: all 0.15s ease; }
+.slide-enter-from, .slide-leave-to { opacity: 0; transform: translateY(-6px); }
 </style>
