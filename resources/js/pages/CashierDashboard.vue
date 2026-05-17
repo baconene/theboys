@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import { Head, usePage, router } from '@inertiajs/vue3'
+import { ref, computed, onMounted } from 'vue'
+import { Head, usePage } from '@inertiajs/vue3'
 import { useCartStore } from '@/stores/cartStore'
 import { toast } from 'vue-sonner'
 import api from '@/utils/api'
-import { ShoppingCart, X, Plus, Minus, Search } from 'lucide-vue-next'
+import { ShoppingCart, X, Plus, Minus, Search, CreditCard, Banknote } from 'lucide-vue-next'
 
 defineOptions({
     layout: {
@@ -21,6 +21,7 @@ interface Product {
     category_id: number; category: { id: number; name: string } | null; modifiers: Modifier[]
 }
 interface Category { id: number; name: string }
+interface Tender { id: number; name: string; is_active: boolean; display_order: number }
 
 const props = defineProps<{ categories: Category[]; products: Product[] }>()
 
@@ -34,8 +35,16 @@ const selectedProduct = ref<Product | null>(null)
 const productQty = ref(1)
 const selectedModifiers = ref<number[]>([])
 const submitting = ref(false)
-const lastOrderNumber = ref<number | null>(null)
 const cartOpen = ref(false)
+
+// Payment modal state
+const paymentOpen = ref(false)
+const pendingOrder = ref<{ id: number; total_amount: number } | null>(null)
+const tenders = ref<Tender[]>([])
+const selectedTenderId = ref<number | null>(null)
+const amountTendered = ref('')
+const reference = ref('')
+const paymentSubmitting = ref(false)
 
 const filteredProducts = computed(() => {
     let list = props.products
@@ -56,6 +65,12 @@ const modifierTotal = computed(() =>
     }, 0),
 )
 
+const change = computed(() => {
+    const tendered = parseFloat(amountTendered.value) || 0
+    const total = pendingOrder.value?.total_amount ?? 0
+    return tendered - total
+})
+
 const openProduct = (product: Product) => {
     selectedProduct.value = product
     productQty.value = 1
@@ -68,6 +83,16 @@ const addToCart = () => {
     toast.success(`${selectedProduct.value.name} added to cart`)
     selectedProduct.value = null
     if (window.innerWidth < 1024) cartOpen.value = true
+}
+
+const loadTenders = async () => {
+    if (tenders.value.length > 0) return
+    try {
+        const res = await api.get('/api/v1/payment-tenders')
+        tenders.value = res.data
+    } catch {
+        // non-fatal
+    }
 }
 
 const submitOrder = async () => {
@@ -87,9 +112,13 @@ const submitOrder = async () => {
         }
         const res = await api.post('/api/v1/orders', payload)
         const order = res.data.data ?? res.data
-        lastOrderNumber.value = order.queue_number ?? order.id
-        cartStore.clear()
-        toast.success(`Order #${lastOrderNumber.value} placed successfully!`)
+        pendingOrder.value = order
+        cartOpen.value = false
+        await loadTenders()
+        selectedTenderId.value = tenders.value[0]?.id ?? null
+        amountTendered.value = order.total_amount?.toFixed(2) ?? ''
+        reference.value = ''
+        paymentOpen.value = true
     } catch (err: any) {
         toast.error(err.response?.data?.message ?? 'Failed to submit order')
     } finally {
@@ -97,7 +126,39 @@ const submitOrder = async () => {
     }
 }
 
+const submitPayment = async () => {
+    if (!pendingOrder.value || !selectedTenderId.value) return
+    paymentSubmitting.value = true
+    try {
+        await api.post('/api/v1/payments', {
+            order_id: pendingOrder.value.id,
+            payment_tender_id: selectedTenderId.value,
+            amount: pendingOrder.value.total_amount,
+            reference: reference.value || null,
+        })
+        const queueOrId = (pendingOrder.value as any).queue_number ?? pendingOrder.value.id
+        toast.success(`Order #${queueOrId} paid! Thank you.`)
+        cartStore.clear()
+        paymentOpen.value = false
+        pendingOrder.value = null
+    } catch (err: any) {
+        toast.error(err.response?.data?.message ?? 'Payment failed')
+    } finally {
+        paymentSubmitting.value = false
+    }
+}
+
+const skipPayment = () => {
+    const queueOrId = (pendingOrder.value as any)?.queue_number ?? pendingOrder.value?.id
+    toast.success(`Order #${queueOrId} placed. Payment pending.`)
+    cartStore.clear()
+    paymentOpen.value = false
+    pendingOrder.value = null
+}
+
 const formatPrice = (val: number) => '₱' + val.toFixed(2)
+
+onMounted(loadTenders)
 </script>
 
 <template>
@@ -179,7 +240,6 @@ const formatPrice = (val: number) => '₱' + val.toFixed(2)
             </div>
 
             <div class="p-4 border-b space-y-3">
-                <!-- Order Type -->
                 <div>
                     <label class="text-xs font-medium text-muted-foreground block mb-1">Order Type</label>
                     <select
@@ -215,23 +275,14 @@ const formatPrice = (val: number) => '₱' + val.toFixed(2)
                         <p class="text-xs text-muted-foreground">{{ formatPrice(item.unit_price) }} each</p>
                     </div>
                     <div class="flex items-center gap-1 shrink-0">
-                        <button
-                            @click="cartStore.updateQuantity(item.id, item.quantity - 1)"
-                            class="rounded bg-muted p-0.5 hover:bg-muted/80"
-                        >
+                        <button @click="cartStore.updateQuantity(item.id, item.quantity - 1)" class="rounded bg-muted p-0.5 hover:bg-muted/80">
                             <Minus class="h-3 w-3" />
                         </button>
                         <span class="w-6 text-center text-sm font-bold">{{ item.quantity }}</span>
-                        <button
-                            @click="cartStore.updateQuantity(item.id, item.quantity + 1)"
-                            class="rounded bg-muted p-0.5 hover:bg-muted/80"
-                        >
+                        <button @click="cartStore.updateQuantity(item.id, item.quantity + 1)" class="rounded bg-muted p-0.5 hover:bg-muted/80">
                             <Plus class="h-3 w-3" />
                         </button>
-                        <button
-                            @click="cartStore.removeItem(item.id)"
-                            class="ml-1 rounded bg-destructive/10 p-0.5 text-destructive hover:bg-destructive/20"
-                        >
+                        <button @click="cartStore.removeItem(item.id)" class="ml-1 rounded bg-destructive/10 p-0.5 text-destructive hover:bg-destructive/20">
                             <X class="h-3 w-3" />
                         </button>
                     </div>
@@ -303,7 +354,6 @@ const formatPrice = (val: number) => '₱' + val.toFixed(2)
         <!-- Drawer -->
         <Transition name="drawer">
             <div v-if="cartOpen" class="fixed inset-y-0 right-0 z-50 w-80 flex flex-col bg-card shadow-2xl lg:hidden">
-                <!-- Header -->
                 <div class="p-4 border-b flex items-center gap-2">
                     <ShoppingCart class="h-5 w-5" />
                     <h2 class="font-bold text-base flex-1">Order Cart</h2>
@@ -315,7 +365,6 @@ const formatPrice = (val: number) => '₱' + val.toFixed(2)
                     </button>
                 </div>
 
-                <!-- Order Type -->
                 <div class="p-4 border-b space-y-3">
                     <div>
                         <label class="text-xs font-medium text-muted-foreground block mb-1">Order Type</label>
@@ -340,7 +389,6 @@ const formatPrice = (val: number) => '₱' + val.toFixed(2)
                     </div>
                 </div>
 
-                <!-- Cart Items -->
                 <div class="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
                     <div v-if="cartStore.items.length === 0" class="text-center text-muted-foreground text-sm py-10">
                         Cart is empty
@@ -365,7 +413,6 @@ const formatPrice = (val: number) => '₱' + val.toFixed(2)
                     </div>
                 </div>
 
-                <!-- Totals -->
                 <div class="p-4 border-t space-y-2 bg-muted/30">
                     <div class="flex items-center gap-2">
                         <label class="text-xs text-muted-foreground w-24 shrink-0">Discount (₱)</label>
@@ -392,7 +439,6 @@ const formatPrice = (val: number) => '₱' + val.toFixed(2)
                     </div>
                 </div>
 
-                <!-- Actions -->
                 <div class="p-4 space-y-2">
                     <button
                         @click="submitOrder"
@@ -404,6 +450,111 @@ const formatPrice = (val: number) => '₱' + val.toFixed(2)
                     <button @click="cartStore.clear" class="w-full rounded-lg border bg-background py-2 text-sm font-medium transition hover:bg-muted">
                         Clear Cart
                     </button>
+                </div>
+            </div>
+        </Transition>
+    </Teleport>
+
+    <!-- Payment Modal -->
+    <Teleport to="body">
+        <Transition name="fade">
+            <div
+                v-if="paymentOpen && pendingOrder"
+                class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+            >
+                <div class="w-full max-w-sm rounded-2xl bg-background shadow-2xl">
+                    <!-- Header -->
+                    <div class="p-5 border-b flex items-center gap-3">
+                        <div class="flex h-9 w-9 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30">
+                            <CreditCard class="h-5 w-5 text-green-600" />
+                        </div>
+                        <div>
+                            <h3 class="font-bold">Collect Payment</h3>
+                            <p class="text-xs text-muted-foreground">Order #{{ (pendingOrder as any).queue_number ?? pendingOrder.id }}</p>
+                        </div>
+                    </div>
+
+                    <div class="p-5 space-y-5">
+                        <!-- Total due -->
+                        <div class="rounded-xl bg-primary/5 border border-primary/20 p-4 text-center">
+                            <p class="text-xs text-muted-foreground mb-1 uppercase tracking-wider">Amount Due</p>
+                            <p class="text-4xl font-black text-primary">{{ formatPrice(pendingOrder.total_amount) }}</p>
+                        </div>
+
+                        <!-- Tender selection -->
+                        <div>
+                            <p class="text-xs font-medium text-muted-foreground mb-2 uppercase tracking-wider">Payment Method</p>
+                            <div class="grid grid-cols-2 gap-2">
+                                <button
+                                    v-for="tender in tenders"
+                                    :key="tender.id"
+                                    @click="selectedTenderId = tender.id"
+                                    :class="[
+                                        'flex items-center gap-2 rounded-lg border px-3 py-2.5 text-sm font-medium transition',
+                                        selectedTenderId === tender.id
+                                            ? 'border-primary bg-primary/10 text-primary'
+                                            : 'border-border bg-background hover:border-primary/50 hover:bg-muted/50',
+                                    ]"
+                                >
+                                    <Banknote class="h-4 w-4 shrink-0" />
+                                    {{ tender.name }}
+                                </button>
+                            </div>
+                            <p v-if="tenders.length === 0" class="text-sm text-muted-foreground text-center py-2">
+                                No payment tenders configured.
+                            </p>
+                        </div>
+
+                        <!-- Amount tendered (cash) -->
+                        <div>
+                            <label class="text-xs font-medium text-muted-foreground block mb-1 uppercase tracking-wider">Amount Tendered</label>
+                            <input
+                                v-model="amountTendered"
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                :placeholder="pendingOrder.total_amount.toFixed(2)"
+                                class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                            />
+                        </div>
+
+                        <!-- Change -->
+                        <div v-if="change >= 0 && amountTendered !== ''" class="flex justify-between items-center rounded-lg bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 px-4 py-3">
+                            <span class="text-sm font-medium text-green-700 dark:text-green-400">Change</span>
+                            <span class="text-lg font-black text-green-600">{{ formatPrice(change) }}</span>
+                        </div>
+                        <div v-else-if="change < 0 && amountTendered !== ''" class="flex justify-between items-center rounded-lg bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 px-4 py-3">
+                            <span class="text-sm font-medium text-red-600">Short by</span>
+                            <span class="text-lg font-black text-red-600">{{ formatPrice(Math.abs(change)) }}</span>
+                        </div>
+
+                        <!-- Reference (optional) -->
+                        <div>
+                            <label class="text-xs font-medium text-muted-foreground block mb-1">Reference # (optional)</label>
+                            <input
+                                v-model="reference"
+                                type="text"
+                                placeholder="e.g. GCash ref, card last 4"
+                                class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                            />
+                        </div>
+                    </div>
+
+                    <div class="p-5 border-t space-y-2">
+                        <button
+                            @click="submitPayment"
+                            :disabled="paymentSubmitting || !selectedTenderId"
+                            class="w-full rounded-lg bg-green-600 py-3 text-sm font-bold text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
+                        >
+                            {{ paymentSubmitting ? 'Processing…' : 'Confirm Payment' }}
+                        </button>
+                        <button
+                            @click="skipPayment"
+                            class="w-full rounded-lg border bg-background py-2 text-sm font-medium hover:bg-muted transition"
+                        >
+                            Skip — Pay Later
+                        </button>
+                    </div>
                 </div>
             </div>
         </Transition>
@@ -428,7 +579,6 @@ const formatPrice = (val: number) => '₱' + val.toFixed(2)
                         </button>
                     </div>
                     <div class="p-5 space-y-4">
-                        <!-- Quantity -->
                         <div class="flex items-center justify-between">
                             <span class="text-sm font-medium">Quantity</span>
                             <div class="flex items-center gap-2">
@@ -442,7 +592,6 @@ const formatPrice = (val: number) => '₱' + val.toFixed(2)
                             </div>
                         </div>
 
-                        <!-- Modifiers -->
                         <div v-if="selectedProduct.modifiers?.length > 0">
                             <p class="text-sm font-medium mb-2">Add-ons</p>
                             <div class="space-y-2">
@@ -458,7 +607,6 @@ const formatPrice = (val: number) => '₱' + val.toFixed(2)
                             </div>
                         </div>
 
-                        <!-- Price summary -->
                         <div class="rounded-lg bg-muted/40 p-3 flex justify-between items-center">
                             <span class="text-sm text-muted-foreground">Item total</span>
                             <span class="font-bold text-primary">
@@ -467,16 +615,10 @@ const formatPrice = (val: number) => '₱' + val.toFixed(2)
                         </div>
                     </div>
                     <div class="p-5 border-t flex gap-3">
-                        <button
-                            @click="selectedProduct = null"
-                            class="flex-1 rounded-lg border py-2 text-sm font-medium hover:bg-muted"
-                        >
+                        <button @click="selectedProduct = null" class="flex-1 rounded-lg border py-2 text-sm font-medium hover:bg-muted">
                             Cancel
                         </button>
-                        <button
-                            @click="addToCart"
-                            class="flex-1 rounded-lg bg-primary py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90"
-                        >
+                        <button @click="addToCart" class="flex-1 rounded-lg bg-primary py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90">
                             Add to Cart
                         </button>
                     </div>
