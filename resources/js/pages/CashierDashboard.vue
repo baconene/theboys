@@ -101,9 +101,9 @@ const formatPrice = (val: number) => '₱' + val.toFixed(2)
 <template>
     <Head title="Point of Sale" />
 
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 h-full">
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
         <!-- LEFT: Product Browser -->
-        <div class="lg:col-span-2 space-y-4">
+        <div class="lg:col-span-2 space-y-4 lg:overflow-y-auto lg:max-h-[calc(100vh-8rem)] lg:pr-1">
             <!-- Search -->
             <div class="relative">
                 <Search class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -167,7 +167,7 @@ const formatPrice = (val: number) => '₱' + val.toFixed(2)
         </div>
 
         <!-- RIGHT: Cart -->
-        <div class="flex flex-col rounded-xl border bg-card shadow-sm overflow-hidden">
+        <div class="flex flex-col rounded-xl border bg-card shadow-sm overflow-hidden sticky top-4 max-h-[calc(100vh-6rem)]">
             <div class="p-4 border-b flex items-center gap-2">
                 <ShoppingCart class="h-5 w-5" />
                 <h2 class="font-bold text-base">Order Cart</h2>
