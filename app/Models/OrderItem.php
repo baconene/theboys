@@ -38,9 +38,12 @@ class OrderItem extends Model
 
     public function calculateSubtotal()
     {
-        $modifiersTotal = $this->modifiers()->sum('price');
-        $subtotal = ($this->unit_price + $modifiersTotal) * $this->quantity;
-        $this->update(['subtotal' => $subtotal]);
+        $modifiersTotal = $this->exists ? $this->modifiers()->sum('price') : 0;
+        $this->subtotal = ($this->unit_price + $modifiersTotal) * $this->quantity;
+
+        if ($this->exists) {
+            $this->save();
+        }
 
         return $this;
     }
