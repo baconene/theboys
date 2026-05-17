@@ -12,38 +12,29 @@ class RolePermissionSeeder extends Seeder
     public function run(): void
     {
         // Create roles
-        $cashierRole = Role::create(['name' => 'cashier', 'description' => 'Cashier staff']);
-        $kitchenRole = Role::create(['name' => 'kitchen', 'description' => 'Kitchen/Queue staff']);
-        $auditorRole = Role::create(['name' => 'auditor', 'description' => 'Auditor/Inventory staff']);
-        $adminRole = Role::create(['name' => 'admin', 'description' => 'Administrator']);
+        $cashierRole = Role::firstOrCreate(['name' => 'cashier', 'guard_name' => 'web'], ['description' => 'Cashier staff']);
+        $kitchenRole = Role::firstOrCreate(['name' => 'kitchen', 'guard_name' => 'web'], ['description' => 'Kitchen/Queue staff']);
+        $auditorRole = Role::firstOrCreate(['name' => 'auditor', 'guard_name' => 'web'], ['description' => 'Auditor/Inventory staff']);
+        $adminRole   = Role::firstOrCreate(['name' => 'admin',   'guard_name' => 'web'], ['description' => 'Administrator']);
 
         // Create permissions
         $permissions = [
-            // Order permissions
-            ['name' => 'create orders', 'description' => 'Create new orders'],
-            ['name' => 'view orders', 'description' => 'View orders'],
-            ['name' => 'update orders', 'description' => 'Update order status'],
-            ['name' => 'delete orders', 'description' => 'Delete orders'],
-
-            // Payment permissions
-            ['name' => 'process payments', 'description' => 'Process order payments'],
-            ['name' => 'refund payments', 'description' => 'Issue refunds'],
-
-            // Inventory permissions
-            ['name' => 'view inventory', 'description' => 'View inventory'],
-            ['name' => 'manage inventory', 'description' => 'Manage inventory'],
-
-            // Report permissions
-            ['name' => 'view reports', 'description' => 'View reports'],
-            ['name' => 'export reports', 'description' => 'Export reports'],
-
-            // User management
-            ['name' => 'manage users', 'description' => 'Manage users'],
-            ['name' => 'manage roles', 'description' => 'Manage roles and permissions'],
+            ['name' => 'create orders',    'description' => 'Create new orders'],
+            ['name' => 'view orders',       'description' => 'View orders'],
+            ['name' => 'update orders',     'description' => 'Update order status'],
+            ['name' => 'delete orders',     'description' => 'Delete orders'],
+            ['name' => 'process payments',  'description' => 'Process order payments'],
+            ['name' => 'refund payments',   'description' => 'Issue refunds'],
+            ['name' => 'view inventory',    'description' => 'View inventory'],
+            ['name' => 'manage inventory',  'description' => 'Manage inventory'],
+            ['name' => 'view reports',      'description' => 'View reports'],
+            ['name' => 'export reports',    'description' => 'Export reports'],
+            ['name' => 'manage users',      'description' => 'Manage users'],
+            ['name' => 'manage roles',      'description' => 'Manage roles and permissions'],
         ];
 
         foreach ($permissions as $permission) {
-            Permission::create($permission);
+            Permission::firstOrCreate(['name' => $permission['name'], 'guard_name' => 'web'], ['description' => $permission['description']]);
         }
 
         // Assign permissions to roles
