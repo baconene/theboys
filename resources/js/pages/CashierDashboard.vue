@@ -111,12 +111,13 @@ const submitOrder = async () => {
             })),
         }
         const res = await api.post('/api/v1/orders', payload)
-        const order = res.data.data ?? res.data
-        pendingOrder.value = order
+        const raw = res.data.data ?? res.data
+        // Normalize decimal fields that Laravel serializes as strings
+        pendingOrder.value = { ...raw, total_amount: parseFloat(raw.total_amount ?? 0) }
         cartOpen.value = false
         await loadTenders()
         selectedTenderId.value = tenders.value[0]?.id ?? null
-        amountTendered.value = order.total_amount?.toFixed(2) ?? ''
+        amountTendered.value = pendingOrder.value.total_amount.toFixed(2)
         reference.value = ''
         paymentOpen.value = true
     } catch (err: any) {

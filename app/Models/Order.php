@@ -52,13 +52,12 @@ class Order extends Model
     public function calculateTotals()
     {
         $subtotal = $this->items()->sum('subtotal');
-        $taxAmount = $subtotal * 0.12; // 12% VAT
-        $totalAmount = $subtotal + $taxAmount - $this->discount_amount;
+        $totalAmount = $subtotal - ($this->discount_amount ?? 0);
 
         $this->update([
             'subtotal' => $subtotal,
-            'tax_amount' => $taxAmount,
-            'total_amount' => $totalAmount,
+            'tax_amount' => 0,
+            'total_amount' => max(0, $totalAmount),
         ]);
 
         return $this;
