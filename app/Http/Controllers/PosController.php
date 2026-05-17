@@ -29,7 +29,7 @@ class PosController extends Controller
                 'name' => $p->name,
                 'description' => $p->description,
                 'price' => (float) $p->price,
-                'image' => $p->image,
+                'image' => $p->image ? '/storage/' . $p->image : null,
                 'category_id' => $p->category_id,
                 'category' => $p->category ? ['id' => $p->category->id, 'name' => $p->category->name] : null,
                 'modifiers' => $p->modifiers->map(fn ($m) => [
