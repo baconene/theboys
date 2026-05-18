@@ -89,7 +89,8 @@ class OrderController extends Controller
             $order->calculateTotals();
         });
 
-        return response()->json(new OrderResource($order->fresh(['items.product', 'queueNumber', 'user'])));
+        $fresh = $order->fresh(['items.product', 'queueNumber']);
+        return response()->json(\App\Http\Controllers\QueueMonitorController::formatOrder($fresh));
     }
 
     public function destroy(Order $order): Response
@@ -123,7 +124,9 @@ class OrderController extends Controller
 
         $orders = $this->orderRepository->getActiveOrders();
 
-        return response()->json(OrderResource::collection($orders));
+        return response()->json(
+            $orders->map(fn ($o) => \App\Http\Controllers\QueueMonitorController::formatOrder($o))->values()
+        );
     }
 
     public function queueOrders(): JsonResponse
