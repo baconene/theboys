@@ -4,7 +4,7 @@ import { Head, usePage } from '@inertiajs/vue3'
 import { useCartStore } from '@/stores/cartStore'
 import { toast } from 'vue-sonner'
 import api from '@/utils/api'
-import { ShoppingCart, X, Plus, Minus, Search, CreditCard, Banknote } from 'lucide-vue-next'
+import { ShoppingCart, X, Plus, Minus, Search, CreditCard, Banknote, CheckCircle2, Printer } from 'lucide-vue-next'
 
 defineOptions({
     layout: {
@@ -22,6 +22,14 @@ interface Product {
 }
 interface Category { id: number; name: string }
 interface Tender { id: number; name: string; is_active: boolean; display_order: number }
+interface CompletedOrder {
+    orderId: number; queueNumber: number | null; orderType: string
+    tableNumber: string | null; customerName: string | null
+    customerContact: string | null; customerAddress: string | null; notes: string | null
+    items: { name: string; quantity: number; unit_price: number }[]
+    subtotal: number; discount: number; total: number
+    tenderName: string; amountTendered: number; change: number; paid: boolean
+}
 
 const props = defineProps<{ categories: Category[]; products: Product[] }>()
 
@@ -45,6 +53,8 @@ const selectedTenderId = ref<number | null>(null)
 const amountTendered = ref('')
 const reference = ref('')
 const paymentSubmitting = ref(false)
+const paymentDone = ref(false)
+const completedOrder = ref<CompletedOrder | null>(null)
 
 const filteredProducts = computed(() => {
     let list = props.products
@@ -130,6 +140,29 @@ const submitOrder = async () => {
     }
 }
 
+const captureOrder = (paid: boolean): CompletedOrder => {
+    const o = pendingOrder.value!
+    const tendered = parseFloat(amountTendered.value) || o.total_amount
+    return {
+        orderId: o.id,
+        queueNumber: (o as any).queue_number ?? null,
+        orderType: (o as any).order_type ?? 'dine_in',
+        tableNumber: (o as any).table_number ?? null,
+        customerName: (o as any).customer_name ?? null,
+        customerContact: (o as any).customer_contact ?? null,
+        customerAddress: (o as any).customer_address ?? null,
+        notes: (o as any).notes ?? null,
+        items: cartStore.items.map(i => ({ name: i.name, quantity: i.quantity, unit_price: i.unit_price })),
+        subtotal: cartStore.subtotal,
+        discount: cartStore.discount,
+        total: o.total_amount,
+        tenderName: tenders.value.find(t => t.id === selectedTenderId.value)?.name ?? '',
+        amountTendered: tendered,
+        change: paid ? Math.max(0, tendered - o.total_amount) : 0,
+        paid,
+    }
+}
+
 const submitPayment = async () => {
     if (!pendingOrder.value || !selectedTenderId.value) return
     paymentSubmitting.value = true
@@ -140,11 +173,8 @@ const submitPayment = async () => {
             amount: pendingOrder.value.total_amount,
             reference: reference.value || null,
         })
-        const queueOrId = (pendingOrder.value as any).queue_number ?? pendingOrder.value.id
-        toast.success(`Order #${queueOrId} paid! Thank you.`)
-        cartStore.clear()
-        paymentOpen.value = false
-        pendingOrder.value = null
+        completedOrder.value = captureOrder(true)
+        paymentDone.value = true
     } catch (err: any) {
         toast.error(err.response?.data?.message ?? 'Payment failed')
     } finally {
@@ -153,11 +183,91 @@ const submitPayment = async () => {
 }
 
 const skipPayment = () => {
-    const queueOrId = (pendingOrder.value as any)?.queue_number ?? pendingOrder.value?.id
-    toast.success(`Order #${queueOrId} placed. Payment pending.`)
+    if (!pendingOrder.value) return
+    completedOrder.value = captureOrder(false)
+    paymentDone.value = true
+}
+
+const closeAndClear = () => {
+    const o = completedOrder.value
+    const queueOrId = o?.queueNumber ?? o?.orderId
+    if (o?.paid) toast.success(`Order #${queueOrId} paid! Thank you.`)
+    else toast.success(`Order #${queueOrId} placed. Payment pending.`)
     cartStore.clear()
     paymentOpen.value = false
     pendingOrder.value = null
+    paymentDone.value = false
+    completedOrder.value = null
+}
+
+const printReceipt = () => {
+    const o = completedOrder.value
+    if (!o) return
+    const now = new Date()
+    const dateStr = now.toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' })
+    const timeStr = now.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit', hour12: true })
+    const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    const fmt = (n: number) => '&#8369;' + n.toFixed(2)
+
+    const itemsHTML = o.items.map(i => `
+        <div class="row"><span class="flex1">${i.quantity}x ${esc(i.name)}</span><span>${fmt(i.unit_price * i.quantity)}</span></div>
+        <div class="small muted">${fmt(i.unit_price)} each</div>
+    `).join('')
+
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Receipt</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{font-family:'Courier New',Courier,monospace;font-size:11px;width:72mm;padding:4mm 3mm;}
+  @media print{@page{size:72mm auto;margin:0;}body{padding:2mm;}}
+  .center{text-align:center;}.bold{font-weight:bold;}.muted{color:#666;}
+  .large{font-size:14px;}.xlarge{font-size:20px;font-weight:bold;}
+  hr{border:none;border-top:1px dashed #000;margin:3px 0;}
+  .row{display:flex;justify-content:space-between;margin:1px 0;}
+  .flex1{flex:1;word-break:break-word;padding-right:4px;}
+  .small{font-size:9px;}.total{font-size:13px;font-weight:bold;}
+</style></head><body>
+  <div class="center bold large">BYPASSGRILL</div>
+  <div class="center muted" style="font-size:9px;">Filipino Grill Restaurant</div>
+  <hr>
+  <div class="center xlarge">${o.queueNumber ? '#' + o.queueNumber : 'Order #' + o.orderId}</div>
+  <div class="center muted" style="font-size:9px;">${dateStr} &nbsp; ${timeStr}</div>
+  <div class="center bold" style="margin-top:2px;">${o.orderType.replace('_',' ').toUpperCase()}</div>
+  ${o.tableNumber ? `<div class="center">Table: ${esc(o.tableNumber)}</div>` : ''}
+  ${o.customerName ? `<div class="center bold">${esc(o.customerName)}</div>` : ''}
+  ${o.customerContact ? `<div class="center muted small">${esc(o.customerContact)}</div>` : ''}
+  ${o.customerAddress ? `<div class="center small" style="word-break:break-word;">${esc(o.customerAddress)}</div>` : ''}
+  <hr>
+  <div class="row bold"><span>ITEM</span><span>AMT</span></div>
+  <hr>
+  ${itemsHTML}
+  <hr>
+  <div class="row"><span>Subtotal</span><span>${fmt(o.subtotal)}</span></div>
+  ${o.discount > 0 ? `<div class="row"><span>Discount</span><span>-${fmt(o.discount)}</span></div>` : ''}
+  <div class="row total"><span>TOTAL</span><span>${fmt(o.total)}</span></div>
+  <hr>
+  ${o.paid
+    ? `<div class="row"><span>Method</span><span>${esc(o.tenderName)}</span></div>
+       <div class="row"><span>Tendered</span><span>${fmt(o.amountTendered)}</span></div>
+       ${o.change > 0 ? `<div class="row bold"><span>CHANGE</span><span>${fmt(o.change)}</span></div>` : ''}`
+    : `<div class="center bold" style="letter-spacing:1px;">** PAYMENT PENDING **</div>`
+  }
+  ${o.notes ? `<hr><div class="small">Note: ${esc(o.notes)}</div>` : ''}
+  <hr>
+  <div class="center" style="margin-top:3px;">Thank you for dining with us!</div>
+  <div class="center muted small">Please come again  &#9829;</div>
+</body></html>`
+
+    const iframe = document.createElement('iframe')
+    iframe.style.cssText = 'position:fixed;width:0;height:0;border:0;left:-9999px;'
+    document.body.appendChild(iframe)
+    const doc = iframe.contentDocument ?? iframe.contentWindow?.document
+    if (!doc) { document.body.removeChild(iframe); toast.error('Could not open print frame'); return }
+    doc.open(); doc.write(html); doc.close()
+    iframe.contentWindow?.focus()
+    setTimeout(() => {
+        iframe.contentWindow?.print()
+        setTimeout(() => document.body.removeChild(iframe), 1000)
+    }, 250)
 }
 
 const formatPrice = (val: number) => '₱' + val.toFixed(2)
@@ -546,99 +656,153 @@ onMounted(loadTenders)
                 v-if="paymentOpen && pendingOrder"
                 class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
             >
-                <div class="w-full max-w-sm rounded-2xl bg-background shadow-2xl">
-                    <!-- Header -->
-                    <div class="p-5 border-b flex items-center gap-3">
-                        <div class="flex h-9 w-9 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30">
-                            <CreditCard class="h-5 w-5 text-green-600" />
-                        </div>
-                        <div>
-                            <h3 class="font-bold">Collect Payment</h3>
-                            <p class="text-xs text-muted-foreground">Order #{{ (pendingOrder as any).queue_number ?? pendingOrder.id }}</p>
-                        </div>
-                    </div>
+                <div class="w-full max-w-sm rounded-2xl bg-background shadow-2xl overflow-hidden">
 
-                    <div class="p-5 space-y-5">
-                        <!-- Total due -->
-                        <div class="rounded-xl bg-primary/5 border border-primary/20 p-4 text-center">
-                            <p class="text-xs text-muted-foreground mb-1 uppercase tracking-wider">Amount Due</p>
-                            <p class="text-4xl font-black text-primary">{{ formatPrice(pendingOrder.total_amount) }}</p>
-                        </div>
-
-                        <!-- Tender selection -->
-                        <div>
-                            <p class="text-xs font-medium text-muted-foreground mb-2 uppercase tracking-wider">Payment Method</p>
-                            <div class="grid grid-cols-2 gap-2">
-                                <button
-                                    v-for="tender in tenders"
-                                    :key="tender.id"
-                                    @click="selectedTenderId = tender.id"
-                                    :class="[
-                                        'flex items-center gap-2 rounded-lg border px-3 py-2.5 text-sm font-medium transition',
-                                        selectedTenderId === tender.id
-                                            ? 'border-primary bg-primary/10 text-primary'
-                                            : 'border-border bg-background hover:border-primary/50 hover:bg-muted/50',
-                                    ]"
-                                >
-                                    <Banknote class="h-4 w-4 shrink-0" />
-                                    {{ tender.name }}
-                                </button>
+                    <!-- ── SUCCESS STATE ────────────────────────────────── -->
+                    <template v-if="paymentDone && completedOrder">
+                        <div class="p-6 text-center">
+                            <div class="flex h-14 w-14 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30 mx-auto mb-3">
+                                <CheckCircle2 class="h-8 w-8 text-green-600" />
                             </div>
-                            <p v-if="tenders.length === 0" class="text-sm text-muted-foreground text-center py-2">
-                                No payment tenders configured.
+                            <h3 class="text-lg font-black">{{ completedOrder.paid ? 'Payment Complete' : 'Order Placed' }}</h3>
+                            <p class="text-sm text-muted-foreground mt-0.5">
+                                {{ completedOrder.queueNumber ? 'Queue #' + completedOrder.queueNumber : 'Order #' + completedOrder.orderId }}
                             </p>
+
+                            <!-- Change display -->
+                            <div v-if="completedOrder.paid && completedOrder.change > 0"
+                                class="mt-4 rounded-xl bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 px-5 py-3">
+                                <p class="text-xs text-muted-foreground uppercase tracking-wider mb-0.5">Change</p>
+                                <p class="text-4xl font-black text-green-600">{{ formatPrice(completedOrder.change) }}</p>
+                            </div>
+                            <div v-else-if="!completedOrder.paid"
+                                class="mt-4 rounded-xl bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-800 px-5 py-3">
+                                <p class="text-sm font-semibold text-yellow-700 dark:text-yellow-400">Payment Pending</p>
+                                <p class="text-xl font-black">{{ formatPrice(completedOrder.total) }}</p>
+                            </div>
+
+                            <!-- Mini order summary -->
+                            <div class="mt-4 rounded-xl bg-muted/40 p-3 text-left space-y-0.5">
+                                <p v-for="item in completedOrder.items" :key="item.name" class="text-xs">
+                                    <span class="font-semibold">{{ item.quantity }}×</span> {{ item.name }}
+                                    <span class="text-muted-foreground float-right">{{ formatPrice(item.unit_price * item.quantity) }}</span>
+                                </p>
+                                <div class="border-t mt-1 pt-1 flex justify-between text-xs font-bold">
+                                    <span>TOTAL</span><span>{{ formatPrice(completedOrder.total) }}</span>
+                                </div>
+                            </div>
                         </div>
 
-                        <!-- Amount tendered (cash) -->
-                        <div>
-                            <label class="text-xs font-medium text-muted-foreground block mb-1 uppercase tracking-wider">Amount Tendered</label>
-                            <input
-                                v-model="amountTendered"
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                :placeholder="pendingOrder.total_amount.toFixed(2)"
-                                class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                            />
+                        <div class="p-5 border-t space-y-2">
+                            <button
+                                @click="printReceipt"
+                                class="w-full rounded-lg bg-primary py-3 text-sm font-bold text-primary-foreground hover:bg-primary/90 transition flex items-center justify-center gap-2"
+                            >
+                                <Printer class="h-4 w-4" /> Print Receipt
+                            </button>
+                            <button
+                                @click="closeAndClear"
+                                class="w-full rounded-lg border bg-background py-2 text-sm font-medium hover:bg-muted transition"
+                            >
+                                Done
+                            </button>
+                        </div>
+                    </template>
+
+                    <!-- ── PAYMENT FORM ─────────────────────────────────── -->
+                    <template v-else>
+                        <!-- Header -->
+                        <div class="p-5 border-b flex items-center gap-3">
+                            <div class="flex h-9 w-9 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30">
+                                <CreditCard class="h-5 w-5 text-green-600" />
+                            </div>
+                            <div>
+                                <h3 class="font-bold">Collect Payment</h3>
+                                <p class="text-xs text-muted-foreground">Order #{{ (pendingOrder as any).queue_number ?? pendingOrder.id }}</p>
+                            </div>
                         </div>
 
-                        <!-- Change -->
-                        <div v-if="change >= 0 && amountTendered !== ''" class="flex justify-between items-center rounded-lg bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 px-4 py-3">
-                            <span class="text-sm font-medium text-green-700 dark:text-green-400">Change</span>
-                            <span class="text-lg font-black text-green-600">{{ formatPrice(change) }}</span>
-                        </div>
-                        <div v-else-if="change < 0 && amountTendered !== ''" class="flex justify-between items-center rounded-lg bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 px-4 py-3">
-                            <span class="text-sm font-medium text-red-600">Short by</span>
-                            <span class="text-lg font-black text-red-600">{{ formatPrice(Math.abs(change)) }}</span>
+                        <div class="p-5 space-y-5">
+                            <!-- Total due -->
+                            <div class="rounded-xl bg-primary/5 border border-primary/20 p-4 text-center">
+                                <p class="text-xs text-muted-foreground mb-1 uppercase tracking-wider">Amount Due</p>
+                                <p class="text-4xl font-black text-primary">{{ formatPrice(pendingOrder.total_amount) }}</p>
+                            </div>
+
+                            <!-- Tender selection -->
+                            <div>
+                                <p class="text-xs font-medium text-muted-foreground mb-2 uppercase tracking-wider">Payment Method</p>
+                                <div class="grid grid-cols-2 gap-2">
+                                    <button
+                                        v-for="tender in tenders"
+                                        :key="tender.id"
+                                        @click="selectedTenderId = tender.id"
+                                        :class="[
+                                            'flex items-center gap-2 rounded-lg border px-3 py-2.5 text-sm font-medium transition',
+                                            selectedTenderId === tender.id
+                                                ? 'border-primary bg-primary/10 text-primary'
+                                                : 'border-border bg-background hover:border-primary/50 hover:bg-muted/50',
+                                        ]"
+                                    >
+                                        <Banknote class="h-4 w-4 shrink-0" />
+                                        {{ tender.name }}
+                                    </button>
+                                </div>
+                                <p v-if="tenders.length === 0" class="text-sm text-muted-foreground text-center py-2">
+                                    No payment tenders configured.
+                                </p>
+                            </div>
+
+                            <!-- Amount tendered -->
+                            <div>
+                                <label class="text-xs font-medium text-muted-foreground block mb-1 uppercase tracking-wider">Amount Tendered</label>
+                                <input
+                                    v-model="amountTendered"
+                                    type="number" min="0" step="0.01"
+                                    :placeholder="pendingOrder.total_amount.toFixed(2)"
+                                    class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                                />
+                            </div>
+
+                            <!-- Change / Short-by -->
+                            <div v-if="change >= 0 && amountTendered !== ''" class="flex justify-between items-center rounded-lg bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 px-4 py-3">
+                                <span class="text-sm font-medium text-green-700 dark:text-green-400">Change</span>
+                                <span class="text-lg font-black text-green-600">{{ formatPrice(change) }}</span>
+                            </div>
+                            <div v-else-if="change < 0 && amountTendered !== ''" class="flex justify-between items-center rounded-lg bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 px-4 py-3">
+                                <span class="text-sm font-medium text-red-600">Short by</span>
+                                <span class="text-lg font-black text-red-600">{{ formatPrice(Math.abs(change)) }}</span>
+                            </div>
+
+                            <!-- Reference -->
+                            <div>
+                                <label class="text-xs font-medium text-muted-foreground block mb-1">Reference # (optional)</label>
+                                <input
+                                    v-model="reference"
+                                    type="text"
+                                    placeholder="e.g. GCash ref, card last 4"
+                                    class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                                />
+                            </div>
                         </div>
 
-                        <!-- Reference (optional) -->
-                        <div>
-                            <label class="text-xs font-medium text-muted-foreground block mb-1">Reference # (optional)</label>
-                            <input
-                                v-model="reference"
-                                type="text"
-                                placeholder="e.g. GCash ref, card last 4"
-                                class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                            />
+                        <div class="p-5 border-t space-y-2">
+                            <button
+                                @click="submitPayment"
+                                :disabled="paymentSubmitting || !selectedTenderId"
+                                class="w-full rounded-lg bg-green-600 py-3 text-sm font-bold text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
+                            >
+                                {{ paymentSubmitting ? 'Processing…' : 'Confirm Payment' }}
+                            </button>
+                            <button
+                                @click="skipPayment"
+                                class="w-full rounded-lg border bg-background py-2 text-sm font-medium hover:bg-muted transition"
+                            >
+                                Skip — Pay Later
+                            </button>
                         </div>
-                    </div>
+                    </template>
 
-                    <div class="p-5 border-t space-y-2">
-                        <button
-                            @click="submitPayment"
-                            :disabled="paymentSubmitting || !selectedTenderId"
-                            class="w-full rounded-lg bg-green-600 py-3 text-sm font-bold text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
-                        >
-                            {{ paymentSubmitting ? 'Processing…' : 'Confirm Payment' }}
-                        </button>
-                        <button
-                            @click="skipPayment"
-                            class="w-full rounded-lg border bg-background py-2 text-sm font-medium hover:bg-muted transition"
-                        >
-                            Skip — Pay Later
-                        </button>
-                    </div>
                 </div>
             </div>
         </Transition>
