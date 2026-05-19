@@ -22,7 +22,9 @@ interface OrderItem {
 interface Order {
     id: number; queue_number: number | null; order_type: string
     status: string; payment_status: string
-    table_number: string | null; notes: string | null
+    table_number: string | null
+    customer_name: string | null; customer_contact: string | null; customer_address: string | null
+    notes: string | null
     total_amount: number; created_at: string; items: OrderItem[]
 }
 interface Product { id: number; name: string; price: number; category: string | null }
@@ -53,6 +55,9 @@ function normalizeOrder(o: any): Order {
         status: o.status,
         payment_status: o.payment_status ?? 'pending',
         table_number: o.table_number ?? null,
+        customer_name: o.customer_name ?? null,
+        customer_contact: o.customer_contact ?? null,
+        customer_address: o.customer_address ?? null,
         notes: o.notes ?? null,
         total_amount: parseFloat(o.total_amount ?? 0),
         created_at: o.created_at,
@@ -230,15 +235,20 @@ const saveEdit = async () => {
                             <div class="flex flex-wrap items-center gap-1.5 mb-2">
                                 <span :class="['text-xs rounded-full px-2 py-0.5 font-semibold', paymentBadge(order.payment_status).cls]">{{ paymentBadge(order.payment_status).label }}</span>
                                 <span class="text-xs text-muted-foreground capitalize">{{ order.order_type.replace('_', ' ') }}<span v-if="order.table_number"> · {{ order.table_number }}</span></span>
+                                <span v-if="order.customer_name" class="text-xs font-semibold text-foreground">{{ order.customer_name }}</span>
+                                <span v-if="order.customer_contact" class="text-xs text-muted-foreground">📞 {{ order.customer_contact }}</span>
                             </div>
                             <ul class="text-sm space-y-0.5 mb-2">
                                 <li v-for="item in order.items" :key="item.id">
                                     <span class="font-bold">{{ item.quantity }}×</span> {{ item.product.name }}
                                 </li>
                             </ul>
-                            <div class="flex justify-between items-center mb-3">
-                                <p v-if="order.notes" class="text-xs text-muted-foreground italic truncate mr-2">{{ order.notes }}</p>
-                                <span class="ml-auto text-sm font-bold text-primary shrink-0">{{ formatPrice(order.total_amount) }}</span>
+                            <div class="flex justify-between items-start mb-3">
+                                <div class="flex-1 mr-2 space-y-0.5">
+                                    <p v-if="order.notes" class="text-xs text-muted-foreground italic">{{ order.notes }}</p>
+                                    <p v-if="order.customer_address" class="text-xs text-orange-600 dark:text-orange-400 font-medium">📍 {{ order.customer_address }}</p>
+                                </div>
+                                <span class="text-sm font-bold text-primary shrink-0">{{ formatPrice(order.total_amount) }}</span>
                             </div>
                             <button @click="updateStatus(order.id, 'preparing')" :disabled="updatingId === order.id"
                                 class="w-full rounded-lg bg-blue-600 py-2 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-50">
@@ -269,15 +279,20 @@ const saveEdit = async () => {
                             <div class="flex flex-wrap items-center gap-1.5 mb-2">
                                 <span :class="['text-xs rounded-full px-2 py-0.5 font-semibold', paymentBadge(order.payment_status).cls]">{{ paymentBadge(order.payment_status).label }}</span>
                                 <span class="text-xs text-muted-foreground capitalize">{{ order.order_type.replace('_', ' ') }}<span v-if="order.table_number"> · {{ order.table_number }}</span></span>
+                                <span v-if="order.customer_name" class="text-xs font-semibold text-foreground">{{ order.customer_name }}</span>
+                                <span v-if="order.customer_contact" class="text-xs text-muted-foreground">📞 {{ order.customer_contact }}</span>
                             </div>
                             <ul class="text-sm space-y-0.5 mb-2">
                                 <li v-for="item in order.items" :key="item.id">
                                     <span class="font-bold">{{ item.quantity }}×</span> {{ item.product.name }}
                                 </li>
                             </ul>
-                            <div class="flex justify-between items-center mb-3">
-                                <p v-if="order.notes" class="text-xs text-muted-foreground italic truncate mr-2">{{ order.notes }}</p>
-                                <span class="ml-auto text-sm font-bold text-primary shrink-0">{{ formatPrice(order.total_amount) }}</span>
+                            <div class="flex justify-between items-start mb-3">
+                                <div class="flex-1 mr-2 space-y-0.5">
+                                    <p v-if="order.notes" class="text-xs text-muted-foreground italic">{{ order.notes }}</p>
+                                    <p v-if="order.customer_address" class="text-xs text-orange-600 dark:text-orange-400 font-medium">📍 {{ order.customer_address }}</p>
+                                </div>
+                                <span class="text-sm font-bold text-primary shrink-0">{{ formatPrice(order.total_amount) }}</span>
                             </div>
                             <button @click="updateStatus(order.id, 'ready')" :disabled="updatingId === order.id"
                                 class="w-full rounded-lg bg-green-600 py-2 text-sm font-bold text-white hover:bg-green-700 disabled:opacity-50">
@@ -308,15 +323,20 @@ const saveEdit = async () => {
                             <div class="flex flex-wrap items-center gap-1.5 mb-2">
                                 <span :class="['text-xs rounded-full px-2 py-0.5 font-semibold', paymentBadge(order.payment_status).cls]">{{ paymentBadge(order.payment_status).label }}</span>
                                 <span class="text-xs text-muted-foreground capitalize">{{ order.order_type.replace('_', ' ') }}<span v-if="order.table_number"> · {{ order.table_number }}</span></span>
+                                <span v-if="order.customer_name" class="text-xs font-semibold text-foreground">{{ order.customer_name }}</span>
+                                <span v-if="order.customer_contact" class="text-xs text-muted-foreground">📞 {{ order.customer_contact }}</span>
                             </div>
                             <ul class="text-sm space-y-0.5 mb-2">
                                 <li v-for="item in order.items" :key="item.id">
                                     <span class="font-bold">{{ item.quantity }}×</span> {{ item.product.name }}
                                 </li>
                             </ul>
-                            <div class="flex justify-between items-center mb-3">
-                                <p v-if="order.notes" class="text-xs text-muted-foreground italic truncate mr-2">{{ order.notes }}</p>
-                                <span class="ml-auto text-sm font-bold text-primary shrink-0">{{ formatPrice(order.total_amount) }}</span>
+                            <div class="flex justify-between items-start mb-3">
+                                <div class="flex-1 mr-2 space-y-0.5">
+                                    <p v-if="order.notes" class="text-xs text-muted-foreground italic">{{ order.notes }}</p>
+                                    <p v-if="order.customer_address" class="text-xs text-orange-600 dark:text-orange-400 font-medium">📍 {{ order.customer_address }}</p>
+                                </div>
+                                <span class="text-sm font-bold text-primary shrink-0">{{ formatPrice(order.total_amount) }}</span>
                             </div>
                             <button @click="updateStatus(order.id, 'completed')" :disabled="updatingId === order.id"
                                 class="w-full rounded-lg bg-gray-700 py-2 text-sm font-bold text-white hover:bg-gray-800 disabled:opacity-50">

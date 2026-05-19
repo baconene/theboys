@@ -16,6 +16,9 @@ class StoreOrderRequest extends FormRequest
         return [
             'order_type' => 'required|in:dine_in,takeout,delivery',
             'table_number' => 'nullable|string',
+            'customer_name' => 'nullable|string|max:100',
+            'customer_contact' => 'nullable|string|max:50',
+            'customer_address' => 'nullable|string|max:300',
             'notes' => 'nullable|string|max:500',
             'discount_amount' => 'nullable|numeric|min:0',
             'items' => 'required|array|min:1',

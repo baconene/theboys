@@ -38,8 +38,11 @@ class QueueMonitorController extends Controller
             'order_type'     => $order->order_type,
             'status'         => $order->status,
             'payment_status' => $order->payment_status,
-            'table_number'   => $order->table_number,
-            'notes'          => $order->notes,
+            'table_number'    => $order->table_number,
+            'customer_name'   => $order->customer_name,
+            'customer_contact' => $order->customer_contact,
+            'customer_address' => $order->customer_address,
+            'notes'           => $order->notes,
             'total_amount'   => (float) $order->total_amount,
             'created_at'     => $order->created_at?->toDateTimeString(),
             'items'          => $order->items->map(fn ($item) => [
@@ -62,7 +65,7 @@ class QueueMonitorController extends Controller
             ->whereIn('status', ['pending', 'preparing', 'ready'])
             ->orderBy('created_at')
             ->get()
-            ->map(fn ($order) => self::formatOrder($order))
+            ->map(fn (Order $order) => self::formatOrder($order))
             ->toArray();
     }
 }

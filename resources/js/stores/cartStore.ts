@@ -6,6 +6,9 @@ export const useCartStore = defineStore('cart', () => {
     const discount = ref(0)
     const orderType = ref('dine_in')
     const tableNumber = ref<string | null>(null)
+    const customerName = ref('')
+    const customerContact = ref('')
+    const customerAddress = ref('')
 
     const subtotal = computed(() =>
         items.value.reduce((sum, item) => sum + item.unit_price * item.quantity, 0)
@@ -42,13 +45,19 @@ export const useCartStore = defineStore('cart', () => {
         discount.value = 0
         orderType.value = 'dine_in'
         tableNumber.value = null
+        customerName.value = ''
+        customerContact.value = ''
+        customerAddress.value = ''
     }
 
     return {
-        items,           // writable ref (array mutated in-place is reactive)
-        discount,        // writable ref
-        orderType,       // writable ref — CashierDashboard assigns directly
-        tableNumber,     // writable ref
+        items,
+        discount,
+        orderType,
+        tableNumber,
+        customerName,
+        customerContact,
+        customerAddress,
         subtotal,
         total,
         addItem,

@@ -102,6 +102,9 @@ const submitOrder = async () => {
         const payload = {
             order_type: cartStore.orderType,
             table_number: cartStore.tableNumber,
+            customer_name: cartStore.customerName || null,
+            customer_contact: cartStore.customerContact || null,
+            customer_address: cartStore.customerAddress || null,
             discount_amount: cartStore.discount,
             notes: '',
             items: cartStore.items.map((item) => ({
@@ -263,6 +266,46 @@ onMounted(loadTenders)
                         class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                     />
                 </div>
+                <!-- Takeout: customer name -->
+                <div v-if="cartStore.orderType === 'takeout'">
+                    <label class="text-xs font-medium text-muted-foreground block mb-1">Customer Name / Alias</label>
+                    <input
+                        v-model="cartStore.customerName"
+                        type="text"
+                        placeholder="e.g. Juan, Table 2"
+                        class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                    />
+                </div>
+                <!-- Delivery: name, contact, address -->
+                <template v-if="cartStore.orderType === 'delivery'">
+                    <div>
+                        <label class="text-xs font-medium text-muted-foreground block mb-1">Customer Name / Alias</label>
+                        <input
+                            v-model="cartStore.customerName"
+                            type="text"
+                            placeholder="Full name or alias"
+                            class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                        />
+                    </div>
+                    <div>
+                        <label class="text-xs font-medium text-muted-foreground block mb-1">Contact Number</label>
+                        <input
+                            v-model="cartStore.customerContact"
+                            type="text"
+                            placeholder="e.g. 09XX XXX XXXX"
+                            class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                        />
+                    </div>
+                    <div>
+                        <label class="text-xs font-medium text-muted-foreground block mb-1">Delivery Address</label>
+                        <textarea
+                            v-model="cartStore.customerAddress"
+                            rows="2"
+                            placeholder="Street, barangay, city…"
+                            class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary resize-none"
+                        />
+                    </div>
+                </template>
             </div>
 
             <!-- Cart Items -->
@@ -388,6 +431,46 @@ onMounted(loadTenders)
                             class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                         />
                     </div>
+                    <!-- Takeout: customer name -->
+                    <div v-if="cartStore.orderType === 'takeout'">
+                        <label class="text-xs font-medium text-muted-foreground block mb-1">Customer Name / Alias</label>
+                        <input
+                            v-model="cartStore.customerName"
+                            type="text"
+                            placeholder="e.g. Juan, Table 2"
+                            class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                        />
+                    </div>
+                    <!-- Delivery: name, contact, address -->
+                    <template v-if="cartStore.orderType === 'delivery'">
+                        <div>
+                            <label class="text-xs font-medium text-muted-foreground block mb-1">Customer Name / Alias</label>
+                            <input
+                                v-model="cartStore.customerName"
+                                type="text"
+                                placeholder="Full name or alias"
+                                class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                            />
+                        </div>
+                        <div>
+                            <label class="text-xs font-medium text-muted-foreground block mb-1">Contact Number</label>
+                            <input
+                                v-model="cartStore.customerContact"
+                                type="text"
+                                placeholder="e.g. 09XX XXX XXXX"
+                                class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                            />
+                        </div>
+                        <div>
+                            <label class="text-xs font-medium text-muted-foreground block mb-1">Delivery Address</label>
+                            <textarea
+                                v-model="cartStore.customerAddress"
+                                rows="2"
+                                placeholder="Street, barangay, city…"
+                                class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary resize-none"
+                            />
+                        </div>
+                    </template>
                 </div>
 
                 <div class="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
