@@ -118,18 +118,35 @@ function printViaIframe(html: string): void {
     }, 300)
 }
 
+// ── QZ Tray CDN loader ───────────────────────────────────────────────────────
+// Loads qz-tray from CDN on first use — no npm package needed on the server.
+
+const QZ_CDN = 'https://cdn.qz.io/qz-tray/qz-tray-2.2.4.js'
+
+async function loadQZ(): Promise<any> {
+    if ((window as any).qz) return (window as any).qz
+    return new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = QZ_CDN
+        script.onload = () => resolve((window as any).qz)
+        script.onerror = () => reject(new Error('Failed to load QZ Tray script from CDN'))
+        document.head.appendChild(script)
+    })
+}
+
+function setupQZSecurity(qz: any): void {
+    qz.security.setCertificatePromise((_resolve: any, reject: any) => reject(''))
+    qz.security.setSignatureAlgorithm('SHA512')
+    qz.security.setSignaturePromise(() => (resolve: any) => resolve(''))
+}
+
 // ── QZ Tray silent print ─────────────────────────────────────────────────────
 // QZ Tray must be installed and running on the POS terminal.
 // Download: https://qz.io/download/
 
 async function printViaQZTray(html: string, settings: PrintSettings): Promise<void> {
-    // Dynamic import so qz-tray only loads when actually needed
-    const qz = (await import('qz-tray')).default as any
-
-    // Allow unsigned connections (suitable for private-network POS deployments)
-    qz.security.setCertificatePromise((_resolve: any, reject: any) => reject(''))
-    qz.security.setSignatureAlgorithm('SHA512')
-    qz.security.setSignaturePromise(() => (resolve: any) => resolve(''))
+    const qz = await loadQZ()
+    setupQZSecurity(qz)
 
     if (!qz.websocket.isActive()) {
         await qz.websocket.connect({ retries: 2, delay: 1 })
@@ -149,10 +166,8 @@ async function printViaQZTray(html: string, settings: PrintSettings): Promise<vo
 // ── Get available printers via QZ Tray ──────────────────────────────────────
 
 export async function getQZPrinters(): Promise<string[]> {
-    const qz = (await import('qz-tray')).default as any
-    qz.security.setCertificatePromise((_resolve: any, reject: any) => reject(''))
-    qz.security.setSignatureAlgorithm('SHA512')
-    qz.security.setSignaturePromise(() => (resolve: any) => resolve(''))
+    const qz = await loadQZ()
+    setupQZSecurity(qz)
     if (!qz.websocket.isActive()) {
         await qz.websocket.connect({ retries: 2, delay: 1 })
     }
