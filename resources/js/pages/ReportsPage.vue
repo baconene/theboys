@@ -6,7 +6,7 @@ import api from '@/utils/api'
 import {
     BarChart3, Download, RefreshCw, TrendingUp, TrendingDown,
     DollarSign, Plus, X, Search, ChevronLeft, ChevronRight,
-    ShoppingBag, ClipboardList, Package, Trash2,
+    ShoppingBag, ClipboardList, Package, Trash2, Pencil, CalendarDays,
 } from 'lucide-vue-next'
 
 defineOptions({
@@ -63,7 +63,7 @@ const props = defineProps<{
 }>()
 
 // ── Active tab ─────────────────────────────────────────────────────────────────
-type Tab = 'orders' | 'inventory' | 'financial' | 'daily' | 'monthly' | 'products' | 'pl'
+type Tab = 'orders' | 'inventory' | 'financial' | 'daily' | 'monthly' | 'products' | 'pl' | 'bills'
 const tab = ref<Tab>('orders')
 const loading = ref(false)
 
@@ -75,6 +75,7 @@ const tabs: { key: Tab; label: string }[] = [
     { key: 'monthly',   label: 'Monthly Sales' },
     { key: 'products',  label: 'Product Sales' },
     { key: 'pl',        label: 'P&L' },
+    { key: 'bills',     label: 'Bills' },
 ]
 
 // ── Daily / Monthly ────────────────────────────────────────────────────────────
@@ -122,6 +123,22 @@ interface PL {
     payroll: { total: number; count: number; breakdown: PLBreakdownItem[] }
     net_profit: number; net_margin: number
 }
+interface Bill {
+    id: number; name: string; description: string | null; amount: number
+    frequency: string; due_date: string; category: string | null
+    is_active: boolean; last_paid_at: string | null
+    status: 'overdue' | 'due_today' | 'upcoming' | 'scheduled' | 'inactive'
+}
+interface BillForecastEntry {
+    bill_id: number; name: string; category: string | null
+    amount: number; due_date: string; frequency: string; status: string
+}
+interface BillForecast {
+    entries: BillForecastEntry[]
+    by_month: Record<string, BillForecastEntry[]>
+    total_forecast: number; months: number
+}
+
 const plStartDate = ref(new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0])
 const plEndDate = ref(today)
 const plReport = ref<PL | null>(null)
@@ -138,6 +155,17 @@ const showEntryForm = ref(false)
 const entryForm = ref({ type: 'expense' as 'expense' | 'income_adjustment', description: '', amount: '', notes: '', transacted_at: '' })
 const entrySaving = ref(false)
 const ftDeleting = ref<number | null>(null)
+
+// ── Bills / Payables ──────────────────────────────────────────────────────
+const bills = ref<Bill[]>([])
+const billForecast = ref<BillForecast | null>(null)
+const forecastMonths = ref(3)
+const showBillForm = ref(false)
+const editingBill = ref<Bill | null>(null)
+const billForm = ref({ name: '', description: '', amount: '', frequency: 'monthly', due_date: '', category: '' })
+const billSaving = ref(false)
+const billPaying = ref<number | null>(null)
+const billDeleting = ref<number | null>(null)
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December']
@@ -193,6 +221,34 @@ const typeBadgeClass = (t: string) => ({
 const isCredit = (t: string) => t === 'payment' || t === 'income_adjustment'
 
 const orderTypeBadge = (t: string) => ({ dine_in: 'Dine-In', takeout: 'Takeout', delivery: 'Delivery' }[t] ?? t)
+
+const frequencyLabel = (f: string) => ({
+    one_time: 'One Time', daily: 'Daily', weekly: 'Weekly', bi_weekly: 'Bi-Weekly',
+    monthly: 'Monthly', quarterly: 'Quarterly', semi_annual: 'Semi-Annual', annual: 'Annual',
+}[f] ?? f)
+
+const billStatusBadge = (s: string) => ({
+    overdue:   'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+    due_today: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
+    upcoming:  'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400',
+    scheduled: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+    inactive:  'bg-muted text-muted-foreground',
+}[s] ?? 'bg-muted text-muted-foreground')
+
+const billStatusLabel = (s: string) => ({
+    overdue: 'Overdue', due_today: 'Due Today', upcoming: 'Due Soon',
+    scheduled: 'Scheduled', inactive: 'Inactive',
+}[s] ?? s)
+
+const monthlySummary = computed(() => {
+    const multiplier: Record<string, number> = {
+        one_time: 0, daily: 30, weekly: 4.33, bi_weekly: 2.17,
+        monthly: 1, quarterly: 1/3, semi_annual: 1/6, annual: 1/12,
+    }
+    return bills.value.filter(b => b.is_active).reduce((sum, b) => sum + b.amount * (multiplier[b.frequency] ?? 0), 0)
+})
+const overdueBills = computed(() => bills.value.filter(b => b.status === 'overdue'))
+const dueSoonBills = computed(() => bills.value.filter(b => b.status === 'due_today' || b.status === 'upcoming'))
 
 const topProducts = computed(() =>
     [...productSales.value].sort((a, b) => b.total_sales - a.total_sales).slice(0, 10)
@@ -282,6 +338,9 @@ const generateReport = async () => {
             await loadInventory(1)
         } else if (tab.value === 'financial') {
             await loadFinancial()
+        } else if (tab.value === 'bills') {
+            await loadBills()
+            await loadForecast()
         }
     } catch (err: any) {
         toast.error(err.response?.data?.message ?? 'Failed to load report')
@@ -324,6 +383,90 @@ const saveEntry = async () => {
         toast.error(err.response?.data?.message ?? 'Failed to save entry.')
     } finally {
         entrySaving.value = false
+    }
+}
+
+// ── Bills actions ─────────────────────────────────────────────────────────────
+const loadBills = async () => {
+    const res = await api.get('/api/v1/bills')
+    bills.value = res.data.data ?? []
+}
+
+const loadForecast = async () => {
+    const res = await api.get('/api/v1/bills/forecast', { params: { months: forecastMonths.value } })
+    billForecast.value = res.data
+}
+
+const openBillForm = (bill?: Bill) => {
+    if (bill) {
+        editingBill.value = bill
+        billForm.value = {
+            name: bill.name, description: bill.description ?? '',
+            amount: String(bill.amount), frequency: bill.frequency,
+            due_date: bill.due_date, category: bill.category ?? '',
+        }
+    } else {
+        editingBill.value = null
+        billForm.value = { name: '', description: '', amount: '', frequency: 'monthly', due_date: '', category: '' }
+    }
+    showBillForm.value = true
+}
+
+const closeBillForm = () => { showBillForm.value = false; editingBill.value = null }
+
+const saveBill = async () => {
+    if (!billForm.value.name.trim() || !billForm.value.amount || !billForm.value.due_date) return
+    billSaving.value = true
+    try {
+        const payload = {
+            name: billForm.value.name,
+            description: billForm.value.description || null,
+            amount: parseFloat(billForm.value.amount),
+            frequency: billForm.value.frequency,
+            due_date: billForm.value.due_date,
+            category: billForm.value.category || null,
+        }
+        if (editingBill.value) {
+            await api.put(`/api/v1/bills/${editingBill.value.id}`, payload)
+            toast.success('Bill updated.')
+        } else {
+            await api.post('/api/v1/bills', payload)
+            toast.success('Bill added.')
+        }
+        closeBillForm()
+        await loadBills(); await loadForecast()
+    } catch (err: any) {
+        toast.error(err.response?.data?.message ?? 'Failed to save bill.')
+    } finally {
+        billSaving.value = false
+    }
+}
+
+const payBill = async (bill: Bill) => {
+    if (!confirm(`Mark "${bill.name}" as paid?\n\nAmount: ${fmt(bill.amount)}\nThis records an expense and advances the due date.`)) return
+    billPaying.value = bill.id
+    try {
+        await api.post(`/api/v1/bills/${bill.id}/pay`)
+        toast.success('Bill marked as paid.')
+        await loadBills(); await loadForecast()
+    } catch (err: any) {
+        toast.error(err.response?.data?.message ?? 'Failed to mark as paid.')
+    } finally {
+        billPaying.value = null
+    }
+}
+
+const deleteBill = async (bill: Bill) => {
+    if (!confirm(`Delete "${bill.name}"? This cannot be undone.`)) return
+    billDeleting.value = bill.id
+    try {
+        await api.delete(`/api/v1/bills/${bill.id}`)
+        toast.success('Bill deleted.')
+        await loadBills(); await loadForecast()
+    } catch (err: any) {
+        toast.error(err.response?.data?.message ?? 'Failed to delete bill.')
+    } finally {
+        billDeleting.value = null
     }
 }
 
@@ -500,6 +643,19 @@ onMounted(async () => {
                         <input v-model="plStartDate" type="date" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
                     <div><label class="text-xs font-medium text-muted-foreground block mb-1">To</label>
                         <input v-model="plEndDate" type="date" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
+                </template>
+
+                <!-- Bills forecast months -->
+                <template v-if="tab === 'bills'">
+                    <div><label class="text-xs font-medium text-muted-foreground block mb-1">Forecast Period</label>
+                        <select v-model.number="forecastMonths" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
+                            <option :value="1">1 month</option>
+                            <option :value="2">2 months</option>
+                            <option :value="3">3 months</option>
+                            <option :value="6">6 months</option>
+                            <option :value="12">12 months</option>
+                        </select>
+                    </div>
                 </template>
 
                 <!-- Financial date range -->
@@ -1018,6 +1174,199 @@ onMounted(async () => {
             </div>
             <div v-else-if="!loading" class="rounded-xl border bg-card p-10 text-center shadow-sm text-muted-foreground text-sm">
                 Select a date range and click <strong>Generate</strong> to load the P&amp;L statement.
+            </div>
+        </template>
+
+        <!-- ── Bills / Payables ─────────────────────────────────────────────── -->
+        <template v-if="tab === 'bills'">
+            <!-- Summary cards -->
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <div class="rounded-xl border bg-card p-4 shadow-sm">
+                    <p class="text-xs text-muted-foreground mb-1 flex items-center gap-1"><CalendarDays class="h-3 w-3" /> Monthly Exposure</p>
+                    <p class="text-xl font-black text-orange-600">{{ fmt(monthlySummary) }}</p>
+                    <p class="text-xs text-muted-foreground mt-0.5">est. per month</p>
+                </div>
+                <div class="rounded-xl border bg-card p-4 shadow-sm">
+                    <p class="text-xs text-muted-foreground mb-1">Annual Exposure</p>
+                    <p class="text-xl font-black">{{ fmt(monthlySummary * 12) }}</p>
+                    <p class="text-xs text-muted-foreground mt-0.5">est. per year</p>
+                </div>
+                <div :class="['rounded-xl border p-4 shadow-sm', overdueBills.length > 0 ? 'bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-800' : 'bg-card']">
+                    <p class="text-xs text-muted-foreground mb-1">Overdue</p>
+                    <p class="text-3xl font-black" :class="overdueBills.length > 0 ? 'text-red-600' : ''">{{ overdueBills.length }}</p>
+                </div>
+                <div :class="['rounded-xl border p-4 shadow-sm', dueSoonBills.length > 0 ? 'bg-yellow-50 dark:bg-yellow-950/20 border-yellow-200 dark:border-yellow-800' : 'bg-card']">
+                    <p class="text-xs text-muted-foreground mb-1">Due Soon</p>
+                    <p class="text-3xl font-black" :class="dueSoonBills.length > 0 ? 'text-yellow-600' : ''">{{ dueSoonBills.length }}</p>
+                </div>
+            </div>
+
+            <!-- Bills list -->
+            <div class="rounded-xl border bg-card shadow-sm overflow-hidden">
+                <div class="p-4 border-b flex items-center justify-between">
+                    <h2 class="font-bold text-sm flex items-center gap-2"><CalendarDays class="h-4 w-4" /> Payables</h2>
+                    <button @click="openBillForm()" class="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-sm font-bold text-primary-foreground hover:bg-primary/90">
+                        <Plus class="h-3.5 w-3.5" /> Add Bill
+                    </button>
+                </div>
+
+                <!-- Add / Edit form -->
+                <div v-if="showBillForm" class="border-b bg-muted/20 p-4">
+                    <p class="text-sm font-bold mb-3">{{ editingBill ? 'Edit Bill' : 'New Payable' }}</p>
+                    <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                        <div>
+                            <label class="text-xs font-medium text-muted-foreground block mb-1">Name *</label>
+                            <input v-model="billForm.name" type="text" placeholder="e.g. Shopee Subscription"
+                                class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                        </div>
+                        <div>
+                            <label class="text-xs font-medium text-muted-foreground block mb-1">Amount (₱) *</label>
+                            <input v-model="billForm.amount" type="number" min="0.01" step="0.01" placeholder="0.00"
+                                class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                        </div>
+                        <div>
+                            <label class="text-xs font-medium text-muted-foreground block mb-1">Frequency *</label>
+                            <select v-model="billForm.frequency" class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
+                                <option value="one_time">One Time</option>
+                                <option value="daily">Daily</option>
+                                <option value="weekly">Weekly</option>
+                                <option value="bi_weekly">Bi-Weekly</option>
+                                <option value="monthly">Monthly</option>
+                                <option value="quarterly">Quarterly</option>
+                                <option value="semi_annual">Semi-Annual</option>
+                                <option value="annual">Annual</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="text-xs font-medium text-muted-foreground block mb-1">Next Due Date *</label>
+                            <input v-model="billForm.due_date" type="date"
+                                class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                        </div>
+                        <div>
+                            <label class="text-xs font-medium text-muted-foreground block mb-1">Category</label>
+                            <input v-model="billForm.category" type="text" placeholder="e.g. Subscription, Utilities"
+                                list="bill-categories"
+                                class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                            <datalist id="bill-categories">
+                                <option value="Subscription" /><option value="Utilities" /><option value="Rent" />
+                                <option value="Platform Fee" /><option value="Loan" /><option value="Insurance" />
+                                <option value="Maintenance" /><option value="Tax" />
+                            </datalist>
+                        </div>
+                        <div>
+                            <label class="text-xs font-medium text-muted-foreground block mb-1">Notes</label>
+                            <input v-model="billForm.description" type="text" placeholder="Optional details"
+                                class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                        </div>
+                    </div>
+                    <div class="flex gap-2 mt-3">
+                        <button @click="saveBill" :disabled="billSaving || !billForm.name.trim() || !billForm.amount || !billForm.due_date"
+                            class="rounded-lg bg-primary px-4 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+                            {{ billSaving ? 'Saving…' : (editingBill ? 'Update' : 'Add Bill') }}
+                        </button>
+                        <button @click="closeBillForm" class="rounded-lg border px-4 py-2 text-sm font-medium hover:bg-muted">Cancel</button>
+                    </div>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead class="bg-muted/50 text-muted-foreground text-xs uppercase tracking-wide">
+                            <tr>
+                                <th class="px-4 py-3 text-left">Bill / Payable</th>
+                                <th class="px-4 py-3 text-left">Category</th>
+                                <th class="px-4 py-3 text-right">Amount</th>
+                                <th class="px-4 py-3 text-left">Frequency</th>
+                                <th class="px-4 py-3 text-left">Next Due</th>
+                                <th class="px-4 py-3 text-left">Status</th>
+                                <th class="px-4 py-3 text-left">Last Paid</th>
+                                <th class="px-4 py-3 text-center">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y">
+                            <tr v-for="bill in bills" :key="bill.id" :class="['hover:bg-muted/20', !bill.is_active ? 'opacity-50' : '']">
+                                <td class="px-4 py-3">
+                                    <p class="font-semibold">{{ bill.name }}</p>
+                                    <p v-if="bill.description" class="text-xs text-muted-foreground truncate max-w-[200px]">{{ bill.description }}</p>
+                                </td>
+                                <td class="px-4 py-3">
+                                    <span v-if="bill.category" class="rounded-full bg-muted px-2 py-0.5 text-xs font-medium">{{ bill.category }}</span>
+                                    <span v-else class="text-muted-foreground">—</span>
+                                </td>
+                                <td class="px-4 py-3 text-right font-bold">{{ fmt(bill.amount) }}</td>
+                                <td class="px-4 py-3 text-muted-foreground text-xs">{{ frequencyLabel(bill.frequency) }}</td>
+                                <td class="px-4 py-3 font-medium">{{ bill.due_date }}</td>
+                                <td class="px-4 py-3">
+                                    <span :class="['rounded-full px-2 py-0.5 text-xs font-semibold', billStatusBadge(bill.status)]">
+                                        {{ billStatusLabel(bill.status) }}
+                                    </span>
+                                </td>
+                                <td class="px-4 py-3 text-xs text-muted-foreground">{{ bill.last_paid_at ? fmtDatetime(bill.last_paid_at) : '—' }}</td>
+                                <td class="px-4 py-3">
+                                    <div class="flex items-center gap-1 justify-center">
+                                        <button v-if="bill.is_active" @click="payBill(bill)" :disabled="billPaying === bill.id"
+                                            class="rounded px-2.5 py-1 text-xs font-bold bg-green-600 text-white hover:bg-green-700 disabled:opacity-40 transition">
+                                            {{ billPaying === bill.id ? '…' : 'Pay' }}
+                                        </button>
+                                        <button @click="openBillForm(bill)"
+                                            class="rounded p-1 text-muted-foreground hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/30 transition">
+                                            <Pencil class="h-3.5 w-3.5" />
+                                        </button>
+                                        <button @click="deleteBill(bill)" :disabled="billDeleting === bill.id"
+                                            class="rounded p-1 text-muted-foreground hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 disabled:opacity-40 transition">
+                                            <Trash2 class="h-3.5 w-3.5" />
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                            <tr v-if="bills.length === 0 && !loading">
+                                <td colspan="8" class="px-4 py-10 text-center text-muted-foreground">
+                                    No bills tracked yet. Click <strong>Add Bill</strong> to start tracking payables.
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Forecast -->
+            <div v-if="billForecast && billForecast.entries.length > 0" class="rounded-xl border bg-card shadow-sm overflow-hidden">
+                <div class="p-4 border-b flex items-center justify-between">
+                    <h2 class="font-bold text-sm flex items-center gap-2">
+                        <TrendingDown class="h-4 w-4 text-orange-500" />
+                        Payment Forecast — Next {{ billForecast.months }} month{{ billForecast.months > 1 ? 's' : '' }}
+                    </h2>
+                    <p class="text-sm font-bold">Total: <span class="text-orange-600">{{ fmt(billForecast.total_forecast) }}</span></p>
+                </div>
+                <div class="p-4 grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <div v-for="(entries, month) in billForecast.by_month" :key="month" class="rounded-xl border overflow-hidden">
+                        <div class="px-4 py-2.5 bg-muted/40 border-b flex items-center justify-between">
+                            <p class="text-sm font-bold">
+                                {{ new Date(String(month) + '-02').toLocaleDateString('en-PH', { month: 'long', year: 'numeric' }) }}
+                            </p>
+                            <p class="text-sm font-bold text-orange-600">
+                                {{ fmt((entries as BillForecastEntry[]).reduce((s, e) => s + e.amount, 0)) }}
+                            </p>
+                        </div>
+                        <div class="divide-y">
+                            <div v-for="entry in (entries as BillForecastEntry[])" :key="entry.bill_id + entry.due_date"
+                                class="px-4 py-2.5 flex items-center justify-between gap-3">
+                                <div class="min-w-0">
+                                    <p class="text-sm font-medium truncate">{{ entry.name }}</p>
+                                    <p class="text-xs text-muted-foreground">Due {{ entry.due_date }}</p>
+                                </div>
+                                <div class="text-right shrink-0">
+                                    <p class="text-sm font-bold">{{ fmt(entry.amount) }}</p>
+                                    <span :class="['rounded-full px-1.5 py-0.5 text-xs font-semibold', billStatusBadge(entry.status)]">
+                                        {{ billStatusLabel(entry.status) }}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div v-else-if="!loading && tab === 'bills' && bills.length === 0" class="rounded-xl border bg-card p-8 text-center shadow-sm text-muted-foreground text-sm">
+                Add bills above and click <strong>Generate</strong> to see the payment forecast.
             </div>
         </template>
 
