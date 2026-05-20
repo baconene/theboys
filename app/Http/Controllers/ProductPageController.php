@@ -36,7 +36,14 @@ class ProductPageController extends Controller
             ]);
 
         $categories  = Category::where('is_active', true)->orderBy('display_order')->get(['id', 'name']);
-        $ingredients = Ingredient::where('is_active', true)->orderBy('name')->get(['id', 'name', 'unit']);
+        $ingredients = Ingredient::where('is_active', true)->orderBy('name')->get(['id', 'name', 'item_type', 'unit', 'cost_per_unit'])
+            ->map(fn ($i) => [
+                'id'           => $i->id,
+                'name'         => $i->name,
+                'item_type'    => $i->item_type ?? 'ingredient',
+                'unit'         => $i->unit,
+                'cost_per_unit' => (float) ($i->cost_per_unit ?? 0),
+            ]);
 
         return Inertia::render('ProductManagement', compact('products', 'categories', 'ingredients'));
     }
