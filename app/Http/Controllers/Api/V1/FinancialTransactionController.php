@@ -44,6 +44,7 @@ class FinancialTransactionController extends Controller {
         $incomeAdj = (float)($rows['income_adjustment']?->total ?? 0);
         $expenses  = (float)($rows['expense']?->total ?? 0);
         $payments  = (float)($rows['payment']?->total ?? 0);
+        $payroll   = (float)($rows['payroll']?->total ?? 0);
 
         return response()->json([
             'period'             => ['start' => $start->toDateString(), 'end' => $end->toDateString()],
@@ -51,7 +52,8 @@ class FinancialTransactionController extends Controller {
             'payments'           => ['total' => $payments,   'count' => $rows['payment']?->count  ?? 0],
             'expenses'           => ['total' => $expenses,   'count' => $rows['expense']?->count  ?? 0],
             'income_adjustments' => ['total' => $incomeAdj,  'count' => $rows['income_adjustment']?->count ?? 0],
-            'net'                => $payments + $incomeAdj - $expenses,
+            'payroll'            => ['total' => $payroll,    'count' => $rows['payroll']?->count  ?? 0],
+            'net'                => $payments + $incomeAdj - $expenses - $payroll,
             'by_tender'          => $byTender,
         ]);
     }

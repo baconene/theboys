@@ -16,16 +16,16 @@ class FinancialTransaction extends Model {
                 ->value('running_balance') ?? 0.0;
 
             $tx->running_balance = round($prev + match ($tx->type) {
-                'payment', 'income_adjustment' => (float) $tx->amount,
-                'expense', 'order'             => -(float) $tx->amount,
-                default                        => 0.0,
+                'payment', 'income_adjustment'  => (float) $tx->amount,
+                'expense', 'order', 'payroll'   => -(float) $tx->amount,
+                default                         => 0.0,
             }, 2);
         });
     }
 
     protected $fillable = [
         'type', 'amount', 'description',
-        'order_id', 'payment_id', 'payment_tender_id',
+        'order_id', 'payment_id', 'payment_tender_id', 'payroll_record_id',
         'user_id', 'notes', 'transacted_at', 'running_balance',
     ];
     protected $casts = [
@@ -37,5 +37,6 @@ class FinancialTransaction extends Model {
     public function order() { return $this->belongsTo(Order::class); }
     public function payment() { return $this->belongsTo(Payment::class); }
     public function tender() { return $this->belongsTo(PaymentTender::class, 'payment_tender_id'); }
+    public function payrollRecord() { return $this->belongsTo(\App\Models\PayrollRecord::class, 'payroll_record_id'); }
     public function user() { return $this->belongsTo(User::class); }
 }

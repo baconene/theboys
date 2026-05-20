@@ -126,7 +126,25 @@ class ReportService
                 'transacted_at' => $e->transacted_at,
             ]);
 
-        $netProfit = $grossProfit + $totalIncomeAdj - $totalExpenses;
+        // Payroll disbursements
+        $payrollRows = \App\Models\FinancialTransaction::where('type', 'payroll')
+            ->whereBetween('transacted_at', [$start->startOfDay(), $end->copy()->endOfDay()])
+            ->selectRaw('COALESCE(SUM(amount), 0) as total, COUNT(*) as count')
+            ->first();
+
+        $totalPayroll = (float) ($payrollRows->total ?? 0);
+
+        $payrollBreakdown = \App\Models\FinancialTransaction::where('type', 'payroll')
+            ->whereBetween('transacted_at', [$start->startOfDay(), $end->copy()->endOfDay()])
+            ->orderByDesc('transacted_at')
+            ->get(['description', 'amount', 'transacted_at'])
+            ->map(fn ($e) => [
+                'description'   => $e->description,
+                'amount'        => (float) $e->amount,
+                'transacted_at' => $e->transacted_at,
+            ]);
+
+        $netProfit = $grossProfit + $totalIncomeAdj - $totalExpenses - $totalPayroll;
         $totalRevenuePlusAdj = $netRevenue + $totalIncomeAdj;
         $netMargin = $totalRevenuePlusAdj > 0 ? round(($netProfit / $totalRevenuePlusAdj) * 100, 2) : 0;
 
@@ -160,6 +178,11 @@ class ReportService
                 'total'     => $totalExpenses,
                 'count'     => $expenseCount,
                 'breakdown' => $expenseBreakdown,
+            ],
+            'payroll' => [
+                'total'     => $totalPayroll,
+                'count'     => (int) ($payrollRows->count ?? 0),
+                'breakdown' => $payrollBreakdown,
             ],
             'net_profit' => $netProfit,
             'net_margin' => $netMargin,

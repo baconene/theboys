@@ -34,6 +34,7 @@ interface FtSummary {
     payments: { total: number; count: number }
     expenses: { total: number; count: number }
     income_adjustments: { total: number; count: number }
+    payroll: { total: number; count: number }
     net: number
     by_tender: { tender: string; total: number; count: number }[]
 }
@@ -118,6 +119,7 @@ interface PL {
     gross_profit: number; gross_margin: number
     income_adjustments: { total: number; count: number; breakdown: PLBreakdownItem[] }
     expenses: { total: number; count: number; breakdown: PLBreakdownItem[] }
+    payroll: { total: number; count: number; breakdown: PLBreakdownItem[] }
     net_profit: number; net_margin: number
 }
 const plStartDate = ref(new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0])
@@ -179,13 +181,14 @@ const invTypeBadge = (t: string) => ({
 }[t] ?? 'bg-muted text-muted-foreground')
 
 const typeLabel = (t: string) => ({
-    order: 'Order', payment: 'Payment', expense: 'Expense', income_adjustment: 'Income Adj.',
+    order: 'Order', payment: 'Payment', expense: 'Expense', income_adjustment: 'Income Adj.', payroll: 'Payroll',
 }[t] ?? t)
 const typeBadgeClass = (t: string) => ({
     order:             'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
     payment:           'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
     expense:           'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
     income_adjustment: 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400',
+    payroll:           'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
 }[t] ?? 'bg-muted text-muted-foreground')
 const isCredit = (t: string) => t === 'payment' || t === 'income_adjustment'
 
@@ -512,6 +515,7 @@ onMounted(async () => {
                             <option value="payment">Payments</option>
                             <option value="expense">Expenses</option>
                             <option value="income_adjustment">Income Adjustments</option>
+                            <option value="payroll">Payroll</option>
                         </select></div>
                 </template>
 
@@ -688,7 +692,7 @@ onMounted(async () => {
 
         <!-- ── Financial ──────────────────────────────────────────────────────── -->
         <template v-if="tab === 'financial'">
-            <div v-if="ftSummary" class="grid grid-cols-2 sm:grid-cols-5 gap-4">
+            <div v-if="ftSummary" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
                 <div class="rounded-xl border bg-card p-4 shadow-sm">
                     <p class="text-xs text-muted-foreground mb-1 flex items-center gap-1"><BarChart3 class="h-3 w-3" /> Orders</p>
                     <p class="text-2xl font-black">{{ ftSummary.orders.count }}</p>
@@ -709,10 +713,15 @@ onMounted(async () => {
                     <p class="text-2xl font-black">{{ ftSummary.income_adjustments?.count ?? 0 }}</p>
                     <p class="text-sm font-semibold text-teal-600 mt-0.5">{{ fmt(ftSummary.income_adjustments?.total ?? 0) }}</p>
                 </div>
+                <div class="rounded-xl border bg-card p-4 shadow-sm">
+                    <p class="text-xs text-muted-foreground mb-1 flex items-center gap-1"><TrendingDown class="h-3 w-3 text-purple-500" /> Payroll</p>
+                    <p class="text-2xl font-black">{{ ftSummary.payroll?.count ?? 0 }}</p>
+                    <p class="text-sm font-semibold text-purple-600 mt-0.5">{{ fmt(ftSummary.payroll?.total ?? 0) }}</p>
+                </div>
                 <div :class="['rounded-xl border p-4 shadow-sm', ftSummary.net >= 0 ? 'bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800' : 'bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-800']">
                     <p class="text-xs text-muted-foreground mb-1 flex items-center gap-1"><DollarSign class="h-3 w-3" /> Net Cash</p>
                     <p class="text-2xl font-black" :class="ftSummary.net >= 0 ? 'text-green-700 dark:text-green-400' : 'text-red-600'">{{ fmt(ftSummary.net) }}</p>
-                    <p class="text-xs text-muted-foreground mt-0.5">Payments + Adj. − Expenses</p>
+                    <p class="text-xs text-muted-foreground mt-0.5">Payments + Adj. − Expenses − Payroll</p>
                 </div>
             </div>
 
@@ -945,6 +954,23 @@ onMounted(async () => {
                             </div>
                         </div>
 
+                        <!-- Payroll -->
+                        <div class="px-5 py-4 space-y-2">
+                            <p class="text-xs font-bold uppercase tracking-wider text-muted-foreground">Payroll Disbursements ({{ plReport.payroll?.count ?? 0 }})</p>
+                            <div v-if="(plReport.payroll?.breakdown ?? []).length > 0" class="space-y-1">
+                                <div v-for="pr in plReport.payroll.breakdown" :key="pr.transacted_at + pr.description"
+                                    class="flex justify-between text-xs text-muted-foreground pl-2">
+                                    <span class="truncate max-w-xs">{{ pr.description }} <span class="opacity-60">— {{ pr.transacted_at?.slice(0, 10) }}</span></span>
+                                    <span class="shrink-0 ml-4 text-purple-600">−{{ fmt(pr.amount) }}</span>
+                                </div>
+                            </div>
+                            <div v-else class="text-xs text-muted-foreground pl-2">No payroll disbursements for this period.</div>
+                            <div class="flex justify-between text-sm font-semibold border-t pt-2">
+                                <span>Total Payroll</span>
+                                <span class="text-purple-600">−{{ fmt(plReport.payroll?.total ?? 0) }}</span>
+                            </div>
+                        </div>
+
                         <!-- Net Profit -->
                         <div :class="['px-5 py-5', plReport.net_profit >= 0 ? 'bg-green-50 dark:bg-green-950/20' : 'bg-red-50 dark:bg-red-950/20']">
                             <div class="flex justify-between items-center">
@@ -963,7 +989,7 @@ onMounted(async () => {
                 </div>
 
                 <!-- Summary cards -->
-                <div class="grid grid-cols-2 sm:grid-cols-5 gap-4">
+                <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
                     <div class="rounded-xl border bg-card p-4 shadow-sm">
                         <p class="text-xs text-muted-foreground mb-1">Gross Sales</p>
                         <p class="text-xl font-black">{{ fmt(plReport.revenue.gross_sales) }}</p>
@@ -979,6 +1005,10 @@ onMounted(async () => {
                     <div class="rounded-xl border bg-card p-4 shadow-sm">
                         <p class="text-xs text-muted-foreground mb-1">Expenses</p>
                         <p class="text-xl font-black text-red-500">{{ fmt(plReport.expenses.total) }}</p>
+                    </div>
+                    <div class="rounded-xl border bg-card p-4 shadow-sm">
+                        <p class="text-xs text-muted-foreground mb-1">Payroll</p>
+                        <p class="text-xl font-black text-purple-600">{{ fmt(plReport.payroll?.total ?? 0) }}</p>
                     </div>
                     <div :class="['rounded-xl border p-4 shadow-sm', plReport.net_profit >= 0 ? 'bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800' : 'bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-800']">
                         <p class="text-xs text-muted-foreground mb-1">Net Profit</p>

@@ -114,10 +114,10 @@ class HrisController extends Controller
             $payrollRecord->update(['status' => 'approved']);
 
             $ft = FinancialTransaction::create([
-                'type'         => 'expense',
-                'amount'       => (float) $payrollRecord->net_pay,
-                'description'  => 'Payroll: ' . $payrollRecord->employee->name,
-                'notes'        => sprintf(
+                'type'              => 'payroll',
+                'amount'            => (float) $payrollRecord->net_pay,
+                'description'       => 'Payroll: ' . $payrollRecord->employee->name,
+                'notes'             => sprintf(
                     '%s – %s | %s days worked | Gross: ₱%s | Deductions: ₱%s',
                     $payrollRecord->period_start->format('M d'),
                     $payrollRecord->period_end->format('M d, Y'),
@@ -125,8 +125,9 @@ class HrisController extends Controller
                     number_format((float) $payrollRecord->gross_pay, 2),
                     number_format((float) $payrollRecord->deductions, 2)
                 ),
-                'user_id'      => auth()->id(),
-                'transacted_at' => now(),
+                'payroll_record_id' => $payrollRecord->id,
+                'user_id'           => auth()->id(),
+                'transacted_at'     => now(),
             ]);
 
             $payrollRecord->update([
