@@ -85,6 +85,7 @@ Route::prefix('v1')->group(function () {
         Route::put('/bills/{bill}', [\App\Http\Controllers\Api\V1\BillController::class, 'update']);
         Route::delete('/bills/{bill}', [\App\Http\Controllers\Api\V1\BillController::class, 'destroy']);
         Route::post('/bills/{bill}/pay', [\App\Http\Controllers\Api\V1\BillController::class, 'pay']);
+        Route::post('/bills/{bill}/installments/{installment}/pay', [\App\Http\Controllers\Api\V1\BillController::class, 'payInstallment']);
 
         // HRIS — Employees
         Route::get('/hris/employees', [HrisController::class, 'employees']);

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\Bill;
+use App\Models\BillInstallment;
 use App\Models\FinancialTransaction;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
@@ -15,9 +16,10 @@ class BillController extends Controller
     public function index(): JsonResponse
     {
         $this->checkAuth();
-        $bills = Bill::orderByRaw("CASE WHEN is_active = 0 THEN 1 ELSE 0 END, due_date")
+        $bills = Bill::with('installments')
+            ->orderByRaw("CASE WHEN is_active = 0 THEN 1 ELSE 0 END, due_date")
             ->get()
-            ->map(fn ($b) => $this->format($b));
+            ->map(fn (Bill $b) => $this->format($b));
         return response()->json(['data' => $bills]);
     }
 
@@ -25,15 +27,23 @@ class BillController extends Controller
     {
         $this->checkAuth();
         $data = $request->validate([
-            'name'        => 'required|string|max:255',
-            'description' => 'nullable|string',
-            'amount'      => 'required|numeric|min:0.01',
-            'frequency'   => 'required|in:one_time,daily,weekly,bi_weekly,monthly,quarterly,semi_annual,annual',
-            'due_date'    => 'required|date',
-            'category'    => 'nullable|string|max:100',
+            'name'              => 'required|string|max:255',
+            'description'       => 'nullable|string',
+            'amount'            => 'required|numeric|min:0.01',
+            'frequency'         => 'required|in:one_time,daily,weekly,bi_weekly,monthly,quarterly,semi_annual,annual',
+            'due_date'          => 'required|date',
+            'category'          => 'nullable|string|max:100',
+            'is_installment'    => 'boolean',
+            'installment_count' => 'required_if:is_installment,true|nullable|integer|min:2|max:360',
         ]);
 
         $bill = Bill::create([...$data, 'user_id' => auth()->id()]);
+
+        if ($bill->is_installment) {
+            $this->generateInstallments($bill);
+            $bill->load('installments');
+        }
+
         return response()->json(['data' => $this->format($bill)], 201);
     }
 
@@ -51,19 +61,23 @@ class BillController extends Controller
         ]);
 
         $bill->update($data);
-        return response()->json(['data' => $this->format($bill->fresh())]);
+        return response()->json(['data' => $this->format($bill->fresh()->load('installments'))]);
     }
 
     public function destroy(Bill $bill): JsonResponse
     {
         $this->checkAuth();
-        $bill->delete();
+        $bill->delete(); // cascades to installments
         return response()->json(null, 204);
     }
 
     public function pay(Request $request, Bill $bill): JsonResponse
     {
         $this->checkAuth();
+
+        if ($bill->is_installment) {
+            return response()->json(['message' => 'Use the installment pay endpoint for payment-plan bills.'], 422);
+        }
 
         if (!$bill->is_active) {
             return response()->json(['message' => 'This bill is no longer active.'], 422);
@@ -99,47 +113,98 @@ class BillController extends Controller
             }
         });
 
-        return response()->json(['data' => $this->format($bill->fresh())]);
+        return response()->json(['data' => $this->format($bill->fresh()->load('installments'))]);
+    }
+
+    public function payInstallment(Request $request, Bill $bill, BillInstallment $installment): JsonResponse
+    {
+        $this->checkAuth();
+
+        if ($installment->bill_id !== $bill->id) abort(404);
+
+        if ($installment->paid_at) {
+            return response()->json(['message' => 'This installment is already paid.'], 422);
+        }
+
+        $data = $request->validate(['notes' => 'nullable|string']);
+
+        DB::transaction(function () use ($bill, $installment, $data) {
+            $ft = FinancialTransaction::create([
+                'type'          => 'expense',
+                'amount'        => (float) $installment->amount,
+                'description'   => "Bill: {$bill->name} — Installment {$installment->installment_number}/{$bill->installment_count}",
+                'notes'         => $data['notes'] ?? sprintf(
+                    'Due %s · %s',
+                    $installment->due_date->format('M d, Y'),
+                    $bill->category ?? ''
+                ),
+                'user_id'       => auth()->id(),
+                'transacted_at' => now(),
+            ]);
+
+            $installment->update([
+                'paid_at'                  => now(),
+                'financial_transaction_id' => $ft->id,
+            ]);
+
+            $allPaid = $bill->installments()->whereNull('paid_at')->doesntExist();
+            $bill->update([
+                'last_paid_at' => now(),
+                'is_active'    => !$allPaid,
+            ]);
+        });
+
+        return response()->json(['data' => $this->format($bill->fresh()->load('installments'))]);
     }
 
     public function forecast(Request $request): JsonResponse
     {
         $this->checkAuth();
-        $months = min(max((int) ($request->months ?? 3), 1), 12);
+        $months = min(max((int) $request->input('months', 3), 1), 12);
         $endDate = Carbon::today()->addMonths($months)->endOfMonth();
 
-        $bills = Bill::where('is_active', true)->get();
+        $bills = Bill::with('installments')->where('is_active', true)->get();
         $entries = [];
 
         foreach ($bills as $bill) {
-            $current = Carbon::parse($bill->due_date);
-
-            while ($current->lte($endDate)) {
-                $entries[] = [
-                    'bill_id'   => $bill->id,
-                    'name'      => $bill->name,
-                    'category'  => $bill->category,
-                    'amount'    => (float) $bill->amount,
-                    'due_date'  => $current->toDateString(),
-                    'frequency' => $bill->frequency,
-                    'status'    => ($current->isPast() && !$current->isToday()) ? 'overdue'
-                        : ($current->isToday() ? 'due_today' : 'upcoming'),
-                ];
-
-                $next = match ($bill->frequency) {
-                    'one_time'    => null,
-                    'daily'       => $current->copy()->addDay(),
-                    'weekly'      => $current->copy()->addWeek(),
-                    'bi_weekly'   => $current->copy()->addWeeks(2),
-                    'monthly'     => $current->copy()->addMonth(),
-                    'quarterly'   => $current->copy()->addMonths(3),
-                    'semi_annual' => $current->copy()->addMonths(6),
-                    'annual'      => $current->copy()->addYear(),
-                    default       => null,
-                };
-
-                if ($next === null) break;
-                $current = $next;
+            if ($bill->is_installment) {
+                foreach ($bill->installments->whereNull('paid_at') as $inst) {
+                    $due = Carbon::parse($inst->due_date);
+                    if ($due->lte($endDate)) {
+                        $entries[] = [
+                            'bill_id'            => $bill->id,
+                            'installment_id'     => $inst->id,
+                            'name'               => $bill->name,
+                            'label'              => "#{$inst->installment_number}/{$bill->installment_count}",
+                            'category'           => $bill->category,
+                            'amount'             => (float) $inst->amount,
+                            'due_date'           => $inst->due_date->toDateString(),
+                            'frequency'          => $bill->frequency,
+                            'is_installment'     => true,
+                            'status'             => $inst->status(),
+                        ];
+                    }
+                }
+            } else {
+                $current = Carbon::parse($bill->due_date);
+                while ($current->lte($endDate)) {
+                    $entries[] = [
+                        'bill_id'        => $bill->id,
+                        'installment_id' => null,
+                        'name'           => $bill->name,
+                        'label'          => null,
+                        'category'       => $bill->category,
+                        'amount'         => (float) $bill->amount,
+                        'due_date'       => $current->toDateString(),
+                        'frequency'      => $bill->frequency,
+                        'is_installment' => false,
+                        'status'         => ($current->isPast() && !$current->isToday()) ? 'overdue'
+                            : ($current->isToday() ? 'due_today' : 'upcoming'),
+                    ];
+                    $next = $this->advance($current, $bill->frequency);
+                    if ($next === null) break;
+                    $current = $next;
+                }
             }
         }
 
@@ -158,19 +223,76 @@ class BillController extends Controller
         ]);
     }
 
+    private function generateInstallments(Bill $bill): void
+    {
+        $total      = (float) $bill->amount;
+        $count      = (int) $bill->installment_count;
+        $perInstall = round($total / $count, 2);
+        $current    = Carbon::parse($bill->due_date);
+
+        for ($i = 1; $i <= $count; $i++) {
+            // Last installment absorbs any rounding difference
+            $amt = ($i === $count) ? round($total - ($perInstall * ($count - 1)), 2) : $perInstall;
+            BillInstallment::create([
+                'bill_id'            => $bill->id,
+                'installment_number' => $i,
+                'amount'             => $amt,
+                'due_date'           => $current->toDateString(),
+            ]);
+            if ($i < $count) {
+                $next = $this->advance($current, $bill->frequency);
+                if ($next === null) break;
+                $current = $next;
+            }
+        }
+    }
+
+    private function advance(Carbon $date, string $frequency): ?Carbon
+    {
+        return match ($frequency) {
+            'one_time'    => null,
+            'daily'       => $date->copy()->addDay(),
+            'weekly'      => $date->copy()->addWeek(),
+            'bi_weekly'   => $date->copy()->addWeeks(2),
+            'monthly'     => $date->copy()->addMonth(),
+            'quarterly'   => $date->copy()->addMonths(3),
+            'semi_annual' => $date->copy()->addMonths(6),
+            'annual'      => $date->copy()->addYear(),
+            default       => null,
+        };
+    }
+
     private function format(Bill $b): array
     {
+        $installments = $b->is_installment
+            ? ($b->relationLoaded('installments') ? $b->installments : $b->installments()->get())
+                ->map(fn ($i) => [
+                    'id'                 => $i->id,
+                    'installment_number' => $i->installment_number,
+                    'amount'             => (float) $i->amount,
+                    'due_date'           => $i->due_date->toDateString(),
+                    'paid_at'            => $i->paid_at?->toDateTimeString(),
+                    'status'             => $i->status(),
+                ])->values()
+            : collect([]);
+
+        $paidCount = $b->is_installment ? $installments->whereNotNull('paid_at')->count() : null;
+
         return [
-            'id'           => $b->id,
-            'name'         => $b->name,
-            'description'  => $b->description,
-            'amount'       => (float) $b->amount,
-            'frequency'    => $b->frequency,
-            'due_date'     => $b->due_date?->toDateString(),
-            'category'     => $b->category,
-            'is_active'    => (bool) $b->is_active,
-            'last_paid_at' => $b->last_paid_at?->toDateTimeString(),
-            'status'       => $b->status(),
+            'id'                => $b->id,
+            'name'              => $b->name,
+            'description'       => $b->description,
+            'amount'            => (float) $b->amount,
+            'frequency'         => $b->frequency,
+            'due_date'          => $b->due_date?->toDateString(),
+            'category'          => $b->category,
+            'is_active'         => (bool) $b->is_active,
+            'is_installment'    => (bool) $b->is_installment,
+            'installment_count' => $b->installment_count,
+            'installments_paid' => $paidCount,
+            'last_paid_at'      => $b->last_paid_at?->toDateTimeString(),
+            'status'            => $b->status(),
+            'installments'      => $installments,
         ];
     }
 

@@ -123,15 +123,24 @@ interface PL {
     payroll: { total: number; count: number; breakdown: PLBreakdownItem[] }
     net_profit: number; net_margin: number
 }
+interface BillInstallment {
+    id: number; installment_number: number; amount: number
+    due_date: string; paid_at: string | null
+    status: 'overdue' | 'due_today' | 'upcoming' | 'scheduled' | 'paid'
+}
 interface Bill {
     id: number; name: string; description: string | null; amount: number
     frequency: string; due_date: string; category: string | null
-    is_active: boolean; last_paid_at: string | null
+    is_active: boolean; is_installment: boolean
+    installment_count: number | null; installments_paid: number | null
+    last_paid_at: string | null
     status: 'overdue' | 'due_today' | 'upcoming' | 'scheduled' | 'inactive'
+    installments: BillInstallment[]
 }
 interface BillForecastEntry {
-    bill_id: number; name: string; category: string | null
-    amount: number; due_date: string; frequency: string; status: string
+    bill_id: number; installment_id: number | null; name: string; label: string | null
+    category: string | null; amount: number; due_date: string
+    frequency: string; is_installment: boolean; status: string
 }
 interface BillForecast {
     entries: BillForecastEntry[]
@@ -162,10 +171,15 @@ const billForecast = ref<BillForecast | null>(null)
 const forecastMonths = ref(3)
 const showBillForm = ref(false)
 const editingBill = ref<Bill | null>(null)
-const billForm = ref({ name: '', description: '', amount: '', frequency: 'monthly', due_date: '', category: '' })
+const billForm = ref({
+    name: '', description: '', amount: '', frequency: 'monthly',
+    due_date: '', category: '', is_installment: false, installment_count: '3',
+})
 const billSaving = ref(false)
 const billPaying = ref<number | null>(null)
 const billDeleting = ref<number | null>(null)
+const expandedBillId = ref<number | null>(null)
+const payingInstallmentId = ref<number | null>(null)
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December']
@@ -404,10 +418,15 @@ const openBillForm = (bill?: Bill) => {
             name: bill.name, description: bill.description ?? '',
             amount: String(bill.amount), frequency: bill.frequency,
             due_date: bill.due_date, category: bill.category ?? '',
+            is_installment: bill.is_installment,
+            installment_count: String(bill.installment_count ?? 3),
         }
     } else {
         editingBill.value = null
-        billForm.value = { name: '', description: '', amount: '', frequency: 'monthly', due_date: '', category: '' }
+        billForm.value = {
+            name: '', description: '', amount: '', frequency: 'monthly',
+            due_date: '', category: '', is_installment: false, installment_count: '3',
+        }
     }
     showBillForm.value = true
 }
@@ -418,13 +437,19 @@ const saveBill = async () => {
     if (!billForm.value.name.trim() || !billForm.value.amount || !billForm.value.due_date) return
     billSaving.value = true
     try {
-        const payload = {
+        const payload: Record<string, any> = {
             name: billForm.value.name,
             description: billForm.value.description || null,
             amount: parseFloat(billForm.value.amount),
             frequency: billForm.value.frequency,
             due_date: billForm.value.due_date,
             category: billForm.value.category || null,
+        }
+        if (!editingBill.value) {
+            payload.is_installment = billForm.value.is_installment
+            if (billForm.value.is_installment) {
+                payload.installment_count = parseInt(billForm.value.installment_count)
+            }
         }
         if (editingBill.value) {
             await api.put(`/api/v1/bills/${editingBill.value.id}`, payload)
@@ -453,6 +478,22 @@ const payBill = async (bill: Bill) => {
         toast.error(err.response?.data?.message ?? 'Failed to mark as paid.')
     } finally {
         billPaying.value = null
+    }
+}
+
+const payInstallment = async (bill: Bill, inst: BillInstallment) => {
+    if (!confirm(`Pay installment #${inst.installment_number} of "${bill.name}"?\n\nAmount: ${fmt(inst.amount)}\nDue: ${inst.due_date}`)) return
+    payingInstallmentId.value = inst.id
+    try {
+        const res = await api.post(`/api/v1/bills/${bill.id}/installments/${inst.id}/pay`)
+        const idx = bills.value.findIndex(b => b.id === bill.id)
+        if (idx !== -1) bills.value[idx] = res.data.data
+        await loadForecast()
+        toast.success(`Installment #${inst.installment_number} paid.`)
+    } catch (err: any) {
+        toast.error(err.response?.data?.message ?? 'Failed to pay installment.')
+    } finally {
+        payingInstallmentId.value = null
     }
 }
 
@@ -1213,6 +1254,21 @@ onMounted(async () => {
                 <!-- Add / Edit form -->
                 <div v-if="showBillForm" class="border-b bg-muted/20 p-4">
                     <p class="text-sm font-bold mb-3">{{ editingBill ? 'Edit Bill' : 'New Payable' }}</p>
+
+                    <!-- Payment plan toggle (new bills only) -->
+                    <div v-if="!editingBill" class="flex gap-2 mb-4">
+                        <button @click="billForm.is_installment = false"
+                            :class="['flex-1 rounded-lg border-2 py-2 text-sm font-semibold transition',
+                                !billForm.is_installment ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:bg-muted']">
+                            Recurring Bill
+                        </button>
+                        <button @click="billForm.is_installment = true"
+                            :class="['flex-1 rounded-lg border-2 py-2 text-sm font-semibold transition',
+                                billForm.is_installment ? 'border-orange-500 bg-orange-50 text-orange-700 dark:bg-orange-950/20 dark:text-orange-400' : 'border-border text-muted-foreground hover:bg-muted']">
+                            Payment Plan (Installments)
+                        </button>
+                    </div>
+
                     <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
                         <div>
                             <label class="text-xs font-medium text-muted-foreground block mb-1">Name *</label>
@@ -1220,14 +1276,18 @@ onMounted(async () => {
                                 class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
                         </div>
                         <div>
-                            <label class="text-xs font-medium text-muted-foreground block mb-1">Amount (₱) *</label>
+                            <label class="text-xs font-medium text-muted-foreground block mb-1">
+                                {{ billForm.is_installment ? 'Total Amount (₱) *' : 'Amount (₱) *' }}
+                            </label>
                             <input v-model="billForm.amount" type="number" min="0.01" step="0.01" placeholder="0.00"
                                 class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
                         </div>
                         <div>
-                            <label class="text-xs font-medium text-muted-foreground block mb-1">Frequency *</label>
+                            <label class="text-xs font-medium text-muted-foreground block mb-1">
+                                {{ billForm.is_installment ? 'Interval Between Payments *' : 'Frequency *' }}
+                            </label>
                             <select v-model="billForm.frequency" class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
-                                <option value="one_time">One Time</option>
+                                <option v-if="!billForm.is_installment" value="one_time">One Time</option>
                                 <option value="daily">Daily</option>
                                 <option value="weekly">Weekly</option>
                                 <option value="bi_weekly">Bi-Weekly</option>
@@ -1237,8 +1297,19 @@ onMounted(async () => {
                                 <option value="annual">Annual</option>
                             </select>
                         </div>
+                        <!-- Installment count: only for new payment-plan bills -->
+                        <div v-if="billForm.is_installment && !editingBill">
+                            <label class="text-xs font-medium text-muted-foreground block mb-1">Number of Installments *</label>
+                            <input v-model="billForm.installment_count" type="number" min="2" max="360" placeholder="e.g. 3"
+                                class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                            <p v-if="billForm.amount && billForm.installment_count" class="text-xs text-muted-foreground mt-1">
+                                ≈ {{ fmt(parseFloat(billForm.amount || '0') / parseInt(billForm.installment_count || '1')) }} / installment
+                            </p>
+                        </div>
                         <div>
-                            <label class="text-xs font-medium text-muted-foreground block mb-1">Next Due Date *</label>
+                            <label class="text-xs font-medium text-muted-foreground block mb-1">
+                                {{ billForm.is_installment ? 'First Payment Date *' : 'Next Due Date *' }}
+                            </label>
                             <input v-model="billForm.due_date" type="date"
                                 class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
                         </div>
@@ -1262,7 +1333,7 @@ onMounted(async () => {
                     <div class="flex gap-2 mt-3">
                         <button @click="saveBill" :disabled="billSaving || !billForm.name.trim() || !billForm.amount || !billForm.due_date"
                             class="rounded-lg bg-primary px-4 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
-                            {{ billSaving ? 'Saving…' : (editingBill ? 'Update' : 'Add Bill') }}
+                            {{ billSaving ? 'Saving…' : (editingBill ? 'Update' : (billForm.is_installment ? 'Create Payment Plan' : 'Add Bill')) }}
                         </button>
                         <button @click="closeBillForm" class="rounded-lg border px-4 py-2 text-sm font-medium hover:bg-muted">Cancel</button>
                     </div>
