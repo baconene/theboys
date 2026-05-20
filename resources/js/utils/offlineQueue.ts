@@ -43,19 +43,39 @@ async function getDB(): Promise<IDBPDatabase> {
 }
 
 // ── Offline queue number ───────────────────────────────────────────────────────
-let _counter = parseInt(localStorage.getItem('bypassgrill_offline_seq') ?? '0')
+// Read counter lazily to avoid localStorage errors at module init
+function getCounter(): number {
+    try {
+        return parseInt(localStorage.getItem('bypassgrill_offline_seq') ?? '0') || 0
+    } catch {
+        return 0
+    }
+}
+
+function setCounter(n: number) {
+    try { localStorage.setItem('bypassgrill_offline_seq', String(n)) } catch { /* ignore */ }
+}
 
 function nextOfflineQueueNumber(): string {
-    _counter++
-    localStorage.setItem('bypassgrill_offline_seq', String(_counter))
-    return `OFF-${String(_counter).padStart(3, '0')}`
+    const n = getCounter() + 1
+    setCounter(n)
+    return `OFF-${String(n).padStart(3, '0')}`
+}
+
+// ── UUID with fallback for non-secure contexts ─────────────────────────────────
+function uuid(): string {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+        return crypto.randomUUID()
+    }
+    // Fallback: timestamp + random
+    return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
 }
 
 // ── Public API ─────────────────────────────────────────────────────────────────
 export async function queueOrder(payload: Record<string, unknown>): Promise<PendingOrder> {
     const db = await getDB()
     const entry: PendingOrder = {
-        localId: crypto.randomUUID(),
+        localId: uuid(),
         offlineQueueNumber: nextOfflineQueueNumber(),
         payload,
         status: 'pending',
@@ -72,7 +92,7 @@ export async function queuePayment(
 ): Promise<PendingPayment> {
     const db = await getDB()
     const entry: PendingPayment = {
-        localId: crypto.randomUUID(),
+        localId: uuid(),
         orderLocalId,
         payload,
         status: 'pending',
@@ -83,12 +103,16 @@ export async function queuePayment(
 }
 
 export async function getPendingCounts(): Promise<{ orders: number; payments: number }> {
-    const db = await getDB()
-    const [orders, payments] = await Promise.all([
-        db.getAllFromIndex('pending_orders', 'by_status', 'pending'),
-        db.getAllFromIndex('pending_payments', 'by_status', 'pending'),
-    ])
-    return { orders: orders.length, payments: payments.length }
+    try {
+        const db = await getDB()
+        const [orders, payments] = await Promise.all([
+            db.getAllFromIndex('pending_orders', 'by_status', 'pending'),
+            db.getAllFromIndex('pending_payments', 'by_status', 'pending'),
+        ])
+        return { orders: orders.length, payments: payments.length }
+    } catch {
+        return { orders: 0, payments: 0 }
+    }
 }
 
 export async function syncQueue(): Promise<{ synced: number; failed: number }> {
@@ -120,7 +144,7 @@ export async function syncQueue(): Promise<{ synced: number; failed: number }> {
             const serverOrderId: number = (data.data ?? data).id
             await db.put('pending_orders', { ...order, status: 'synced', serverOrderId })
 
-            // Update any queued payments for this local order with the real server ID
+            // Update linked payments with the resolved server order ID
             const linked = await db.getAllFromIndex('pending_payments', 'by_order_local_id', order.localId)
             for (const p of linked) {
                 await db.put('pending_payments', {
@@ -136,7 +160,7 @@ export async function syncQueue(): Promise<{ synced: number; failed: number }> {
         }
     }
 
-    // 2. Sync pending payments that now have a resolved server order ID
+    // 2. Sync pending payments that have a resolved server order ID
     const pendingPayments = await db.getAllFromIndex('pending_payments', 'by_status', 'pending')
     for (const payment of pendingPayments) {
         if (!payment.serverOrderId) continue

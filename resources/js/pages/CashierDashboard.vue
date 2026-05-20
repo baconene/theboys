@@ -130,8 +130,9 @@ const queueOrderOffline = async (payload: Record<string, unknown>): Promise<bool
         await refreshCount()
         toast.warning(`Offline — order ${queued.offlineQueueNumber} queued for sync.`)
         return true
-    } catch {
-        toast.error('Could not save order offline. Check browser storage permissions.')
+    } catch (err) {
+        console.error('[Offline queue error]', err)
+        toast.error(`Offline queue failed: ${err instanceof Error ? err.message : String(err)}`)
         return false
     }
 }
