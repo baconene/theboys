@@ -77,7 +77,8 @@ export async function queueOrder(payload: Record<string, unknown>): Promise<Pend
     const entry: PendingOrder = {
         localId: uuid(),
         offlineQueueNumber: nextOfflineQueueNumber(),
-        payload,
+        // JSON round-trip strips Vue reactive Proxies — IDBObjectStore requires plain cloneable objects
+        payload: JSON.parse(JSON.stringify(payload)),
         status: 'pending',
         createdAt: new Date().toISOString(),
     }
@@ -94,7 +95,7 @@ export async function queuePayment(
     const entry: PendingPayment = {
         localId: uuid(),
         orderLocalId,
-        payload,
+        payload: JSON.parse(JSON.stringify(payload)),
         status: 'pending',
         createdAt: new Date().toISOString(),
     }
