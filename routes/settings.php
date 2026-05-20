@@ -2,6 +2,8 @@
 
 use App\Http\Controllers\Settings\ProfileController;
 use App\Http\Controllers\Settings\SecurityController;
+use App\Http\Controllers\Settings\UserManagementController;
+use App\Http\Controllers\Settings\LogoController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware(['auth'])->group(function () {
@@ -12,6 +14,31 @@ Route::middleware(['auth'])->group(function () {
 
     Route::get('settings/payment-tenders', [\App\Http\Controllers\Settings\PaymentTenderSettingsController::class, 'index'])
         ->name('settings.payment-tenders')
+        ->middleware('role:admin');
+
+    // User management (admin only)
+    Route::get('settings/users', [UserManagementController::class, 'index'])
+        ->name('settings.users')
+        ->middleware('role:admin');
+    Route::post('settings/users', [UserManagementController::class, 'store'])
+        ->name('settings.users.store')
+        ->middleware('role:admin');
+    Route::patch('settings/users/{user}', [UserManagementController::class, 'update'])
+        ->name('settings.users.update')
+        ->middleware('role:admin');
+    Route::delete('settings/users/{user}', [UserManagementController::class, 'destroy'])
+        ->name('settings.users.destroy')
+        ->middleware('role:admin');
+
+    // Logo (admin only)
+    Route::get('settings/logo', [LogoController::class, 'edit'])
+        ->name('settings.logo')
+        ->middleware('role:admin');
+    Route::post('settings/logo', [LogoController::class, 'update'])
+        ->name('settings.logo.update')
+        ->middleware('role:admin');
+    Route::delete('settings/logo', [LogoController::class, 'destroy'])
+        ->name('settings.logo.destroy')
         ->middleware('role:admin');
 });
 

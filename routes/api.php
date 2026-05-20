@@ -60,6 +60,7 @@ Route::prefix('v1')->group(function () {
         Route::get('/reports/monthly-sales', [ReportController::class, 'monthlySales']);
         Route::get('/reports/product-sales', [ReportController::class, 'productSales']);
         Route::get('/reports/inventory-valuation', [ReportController::class, 'inventoryValuation']);
+        Route::get('/reports/inventory-transactions', [ReportController::class, 'inventoryTransactions']);
 
         // Payment Tenders (authenticated write + all-list)
         Route::get('/payment-tenders/all', [\App\Http\Controllers\Api\V1\PaymentTenderController::class, 'all']);

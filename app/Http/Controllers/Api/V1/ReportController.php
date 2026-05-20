@@ -54,6 +54,29 @@ class ReportController extends Controller
         return response()->json($report);
     }
 
+    public function inventoryTransactions(): JsonResponse
+    {
+        $this->checkPermission();
+
+        $query = \App\Models\InventoryTransaction::with(['ingredient', 'user'])
+            ->orderByDesc('created_at');
+
+        if (request()->input('date_from')) {
+            $query->whereDate('created_at', '>=', request()->input('date_from'));
+        }
+        if (request()->input('date_to')) {
+            $query->whereDate('created_at', '<=', request()->input('date_to'));
+        }
+        if (request()->input('type')) {
+            $query->where('type', request()->input('type'));
+        }
+        if (request()->input('ingredient_id')) {
+            $query->where('ingredient_id', request()->input('ingredient_id'));
+        }
+
+        return response()->json($query->paginate(50));
+    }
+
     private function checkPermission(): void
     {
         if (! auth()->user()?->hasAnyRole('admin') && ! auth()->user()?->hasPermissionTo('view reports')) {

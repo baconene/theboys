@@ -23,7 +23,7 @@ class ReportPageController extends Controller
             'initialDailyReport' => $dailyReport,
             'initialProductSales' => $productSales->map(fn ($item) => [
                 'product_id' => $item->product_id,
-                'product_name' => $item->product?->name ?? 'Unknown',
+                'product_name' => $item->product_name,
                 'total_quantity' => (int) $item->total_quantity,
                 'total_sales' => (float) $item->total_sales,
             ])->values()->toArray(),

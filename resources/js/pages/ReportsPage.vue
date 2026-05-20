@@ -6,7 +6,7 @@ import api from '@/utils/api'
 import {
     BarChart3, Download, RefreshCw, TrendingUp, TrendingDown,
     DollarSign, Plus, X, Search, ChevronLeft, ChevronRight,
-    ShoppingBag, ClipboardList,
+    ShoppingBag, ClipboardList, Package,
 } from 'lucide-vue-next'
 
 defineOptions({
@@ -46,18 +46,36 @@ interface OrderRow {
     total_amount: number; items: { data: any[] } | any[]; user?: { data?: any; name?: string }
     created_at: string
 }
+interface InvTransaction {
+    id: number; type: string; quantity: number; old_quantity: number; new_quantity: number
+    reference: string | null; notes: string | null; created_at: string
+    ingredient?: { id: number; name: string; unit: string }
+    user?: { name: string }
+}
+interface Ingredient { id: number; name: string; unit: string }
 
 const props = defineProps<{
     initialDailyReport: DailyReport
     initialProductSales: ProductSale[]
 }>()
 
-// ── Report type ────────────────────────────────────────────────────────────────
-const reportType = ref<'orders' | 'daily' | 'monthly' | 'products' | 'inventory' | 'financial'>('orders')
+// ── Active tab ─────────────────────────────────────────────────────────────────
+type Tab = 'orders' | 'inventory' | 'financial' | 'daily' | 'monthly' | 'products'
+const tab = ref<Tab>('orders')
 const loading = ref(false)
 
+const tabs: { key: Tab; label: string }[] = [
+    { key: 'orders',    label: 'Orders' },
+    { key: 'inventory', label: 'Inventory' },
+    { key: 'financial', label: 'Financial' },
+    { key: 'daily',     label: 'Daily Sales' },
+    { key: 'monthly',   label: 'Monthly Sales' },
+    { key: 'products',  label: 'Product Sales' },
+]
+
 // ── Daily / Monthly ────────────────────────────────────────────────────────────
-const selectedDate = ref(new Date().toISOString().split('T')[0])
+const today = new Date().toISOString().split('T')[0]
+const selectedDate = ref(today)
 const selectedYear = ref(new Date().getFullYear())
 const selectedMonth = ref(new Date().getMonth() + 1)
 const dailyReport = ref<DailyReport | null>(props.initialDailyReport)
@@ -65,23 +83,32 @@ const monthlyReport = ref<MonthlyReport | null>(null)
 
 // ── Products ───────────────────────────────────────────────────────────────────
 const productSales = ref<ProductSale[]>(props.initialProductSales)
+const prodDateFrom = ref(new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0])
+const prodDateTo = ref(today)
 
-// ── Inventory ──────────────────────────────────────────────────────────────────
-const inventoryReport = ref<any[]>([])
-
-// ── Orders (searchable list) ───────────────────────────────────────────────────
+// ── Orders ─────────────────────────────────────────────────────────────────────
 const ordSearch = ref('')
-const ordDateFrom = ref(new Date().toISOString().split('T')[0])
-const ordDateTo = ref(new Date().toISOString().split('T')[0])
+const ordDateFrom = ref(today)
+const ordDateTo = ref(today)
 const ordStatus = ref('')
 const ordPayment = ref('')
 const ordersData = ref<OrderRow[]>([])
 const ordersMeta = ref<any>(null)
 const ordPage = ref(1)
 
+// ── Inventory transactions ─────────────────────────────────────────────────────
+const invDateFrom = ref(today)
+const invDateTo = ref(today)
+const invType = ref('')
+const invIngredientId = ref('')
+const invTransactions = ref<InvTransaction[]>([])
+const invMeta = ref<any>(null)
+const invPage = ref(1)
+const ingredients = ref<Ingredient[]>([])
+
 // ── Financial ─────────────────────────────────────────────────────────────────
-const ftStartDate = ref(new Date().toISOString().split('T')[0])
-const ftEndDate = ref(new Date().toISOString().split('T')[0])
+const ftStartDate = ref(today)
+const ftEndDate = ref(today)
 const ftTypeFilter = ref('')
 const ftSummary = ref<FtSummary | null>(null)
 const ftTransactions = ref<FtTransaction[]>([])
@@ -91,7 +118,7 @@ const expenseForm = ref({ description: '', amount: '', notes: '' })
 const expenseSaving = ref(false)
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December']
 const monthName = (n: number) => monthNames[n - 1] ?? ''
 
 const fmt = (v: number | string | null | undefined) =>
@@ -122,6 +149,15 @@ const payBadge = (s: string) => ({
     voided:   'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
 }[s] ?? 'bg-muted text-muted-foreground')
 
+const invTypeBadge = (t: string) => ({
+    stock_in:   'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+    stock_out:  'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+    adjustment: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+    waste:      'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
+    usage:      'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400',
+    purchase:   'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
+}[t] ?? 'bg-muted text-muted-foreground')
+
 const typeLabel = (t: string) => ({ order: 'Order', payment: 'Payment', expense: 'Expense' }[t] ?? t)
 const typeBadgeClass = (t: string) => ({
     order:   'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
@@ -129,17 +165,7 @@ const typeBadgeClass = (t: string) => ({
     expense: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
 }[t] ?? 'bg-muted text-muted-foreground')
 
-const orderTypeBadge = (t: string) => ({
-    dine_in: 'Dine-In',
-    takeout: 'Takeout',
-    delivery: 'Delivery',
-}[t] ?? t)
-
-const activeReport = computed(() => {
-    if (reportType.value === 'daily') return dailyReport.value
-    if (reportType.value === 'monthly') return monthlyReport.value
-    return null
-})
+const orderTypeBadge = (t: string) => ({ dine_in: 'Dine-In', takeout: 'Takeout', delivery: 'Delivery' }[t] ?? t)
 
 const topProducts = computed(() =>
     [...productSales.value].sort((a, b) => b.total_sales - a.total_sales).slice(0, 10)
@@ -165,6 +191,21 @@ const loadOrders = async (page = 1) => {
     ordersMeta.value = res.data.meta ?? null
 }
 
+const loadInventory = async (page = 1) => {
+    invPage.value = page
+    const res = await api.get('/api/v1/reports/inventory-transactions', {
+        params: {
+            page,
+            date_from: invDateFrom.value || undefined,
+            date_to: invDateTo.value || undefined,
+            type: invType.value || undefined,
+            ingredient_id: invIngredientId.value || undefined,
+        },
+    })
+    invTransactions.value = res.data.data ?? []
+    invMeta.value = res.data.meta ?? null
+}
+
 const loadFinancial = async () => {
     const [summaryRes, listRes] = await Promise.all([
         api.get('/api/v1/financial-transactions/summary', {
@@ -186,21 +227,22 @@ const loadFinancial = async () => {
 const generateReport = async () => {
     loading.value = true
     try {
-        if (reportType.value === 'orders') {
+        if (tab.value === 'orders') {
             await loadOrders(1)
-        } else if (reportType.value === 'daily') {
+        } else if (tab.value === 'daily') {
             const res = await api.get('/api/v1/reports/daily-sales', { params: { date: selectedDate.value } })
             dailyReport.value = res.data
-        } else if (reportType.value === 'monthly') {
+        } else if (tab.value === 'monthly') {
             const res = await api.get('/api/v1/reports/monthly-sales', { params: { year: selectedYear.value, month: selectedMonth.value } })
             monthlyReport.value = res.data
-        } else if (reportType.value === 'products') {
-            const res = await api.get('/api/v1/reports/product-sales')
+        } else if (tab.value === 'products') {
+            const res = await api.get('/api/v1/reports/product-sales', {
+                params: { start_date: prodDateFrom.value, end_date: prodDateTo.value },
+            })
             productSales.value = res.data
-        } else if (reportType.value === 'inventory') {
-            const res = await api.get('/api/v1/reports/inventory-valuation')
-            inventoryReport.value = res.data
-        } else if (reportType.value === 'financial') {
+        } else if (tab.value === 'inventory') {
+            await loadInventory(1)
+        } else if (tab.value === 'financial') {
             await loadFinancial()
         }
     } catch (err: any) {
@@ -236,41 +278,36 @@ const exportCSV = () => {
     let rows: string[][] = []
     let filename = 'report'
 
-    if (reportType.value === 'orders' && ordersData.value.length > 0) {
+    if (tab.value === 'orders' && ordersData.value.length > 0) {
         filename = `orders-${ordDateFrom.value}-to-${ordDateTo.value}`
         rows = [
             ['ID', 'Queue#', 'Date', 'Type', 'Table', 'Status', 'Payment', 'Items', 'Total'],
             ...ordersData.value.map((o) => [
-                String(o.id),
-                String(o.queue_number ?? ''),
-                o.created_at?.slice(0, 16) ?? '',
-                o.order_type,
-                o.table_number ?? '',
-                o.status,
-                o.payment_status,
-                String(itemCount(o.items)),
-                String(o.total_amount),
+                String(o.id), String(o.queue_number ?? ''), o.created_at?.slice(0, 16) ?? '',
+                o.order_type, o.table_number ?? '', o.status, o.payment_status,
+                String(itemCount(o.items)), String(o.total_amount),
             ]),
         ]
-    } else if (reportType.value === 'daily' && dailyReport.value) {
-        filename = `daily-sales-${dailyReport.value.date}`
+    } else if (tab.value === 'inventory' && invTransactions.value.length > 0) {
+        filename = `inventory-transactions-${invDateFrom.value}-to-${invDateTo.value}`
         rows = [
-            ['Date', 'Total Orders', 'Total Sales', 'Discounts'],
-            [dailyReport.value.date, String(dailyReport.value.total_orders), String(dailyReport.value.total_sales), String(dailyReport.value.total_discount)],
+            ['Date', 'Ingredient', 'Type', 'Quantity', 'Old Stock', 'New Stock', 'Unit', 'Reference', 'Notes', 'By'],
+            ...invTransactions.value.map((t) => [
+                t.created_at?.slice(0, 10) ?? '', t.ingredient?.name ?? '',
+                t.type, String(t.quantity), String(t.old_quantity), String(t.new_quantity),
+                t.ingredient?.unit ?? '', t.reference ?? '', t.notes ?? '', t.user?.name ?? '',
+            ]),
         ]
-    } else if (reportType.value === 'products') {
+    } else if (tab.value === 'products') {
         filename = `product-sales`
         rows = [['Product', 'Qty Sold', 'Total Sales'], ...productSales.value.map((p) => [p.product_name, String(p.total_quantity), String(p.total_sales)])]
-    } else if (reportType.value === 'financial' && ftTransactions.value.length > 0) {
+    } else if (tab.value === 'financial' && ftTransactions.value.length > 0) {
         filename = `financial-transactions-${ftStartDate.value}-to-${ftEndDate.value}`
         rows = [
             ['Date', 'Type', 'Description', 'Tender', 'Amount', 'User'],
             ...ftTransactions.value.map((t) => [
-                t.transacted_at?.slice(0, 10) ?? '',
-                t.type, t.description,
-                t.tender?.name ?? '',
-                String(t.amount),
-                t.user?.name ?? '',
+                t.transacted_at?.slice(0, 10) ?? '', t.type, t.description,
+                t.tender?.name ?? '', String(t.amount), t.user?.name ?? '',
             ]),
         ]
     }
@@ -287,40 +324,50 @@ const exportCSV = () => {
 
 const printReport = () => window.print()
 
-onMounted(() => generateReport())
+const switchTab = (t: Tab) => {
+    tab.value = t
+    generateReport()
+}
+
+onMounted(async () => {
+    // Pre-load ingredient list for the inventory filter dropdown
+    try {
+        const res = await api.get('/api/v1/inventory')
+        ingredients.value = (res.data.data ?? res.data).map((i: any) => ({ id: i.id, name: i.name, unit: i.unit }))
+    } catch { /* non-critical */ }
+    await generateReport()
+})
 </script>
 
 <template>
     <Head title="Reports" />
 
-    <div class="space-y-6">
-        <!-- Filters Bar -->
+    <div class="space-y-5">
+        <!-- Tab bar -->
+        <div class="flex flex-wrap gap-1 rounded-xl border bg-card p-1.5 shadow-sm">
+            <button
+                v-for="t in tabs" :key="t.key"
+                @click="switchTab(t.key)"
+                :class="[
+                    'rounded-lg px-4 py-2 text-sm font-medium transition',
+                    tab === t.key
+                        ? 'bg-primary text-primary-foreground shadow-sm'
+                        : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                ]"
+            >{{ t.label }}</button>
+        </div>
+
+        <!-- Filters bar -->
         <div class="rounded-xl border bg-card shadow-sm p-4">
             <div class="flex flex-wrap gap-3 items-end">
-                <div>
-                    <label class="text-xs font-medium text-muted-foreground block mb-1">Report Type</label>
-                    <select v-model="reportType" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
-                        <option value="orders">Orders List</option>
-                        <option value="daily">Daily Sales</option>
-                        <option value="monthly">Monthly Sales</option>
-                        <option value="products">Product Sales</option>
-                        <option value="inventory">Inventory Valuation</option>
-                        <option value="financial">Financial Records</option>
-                    </select>
-                </div>
 
                 <!-- Orders filters -->
-                <template v-if="reportType === 'orders'">
-                    <div>
-                        <label class="text-xs font-medium text-muted-foreground block mb-1">From</label>
-                        <input v-model="ordDateFrom" type="date" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
-                    </div>
-                    <div>
-                        <label class="text-xs font-medium text-muted-foreground block mb-1">To</label>
-                        <input v-model="ordDateTo" type="date" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
-                    </div>
-                    <div>
-                        <label class="text-xs font-medium text-muted-foreground block mb-1">Status</label>
+                <template v-if="tab === 'orders'">
+                    <div><label class="text-xs font-medium text-muted-foreground block mb-1">From</label>
+                        <input v-model="ordDateFrom" type="date" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
+                    <div><label class="text-xs font-medium text-muted-foreground block mb-1">To</label>
+                        <input v-model="ordDateTo" type="date" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
+                    <div><label class="text-xs font-medium text-muted-foreground block mb-1">Order Status</label>
                         <select v-model="ordStatus" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
                             <option value="">All Statuses</option>
                             <option value="pending">Pending</option>
@@ -328,79 +375,88 @@ onMounted(() => generateReport())
                             <option value="ready">Ready</option>
                             <option value="completed">Completed</option>
                             <option value="cancelled">Cancelled</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label class="text-xs font-medium text-muted-foreground block mb-1">Payment</label>
+                        </select></div>
+                    <div><label class="text-xs font-medium text-muted-foreground block mb-1">Payment</label>
                         <select v-model="ordPayment" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
                             <option value="">All</option>
                             <option value="paid">Paid</option>
                             <option value="pending">Unpaid</option>
                             <option value="refunded">Refunded</option>
                             <option value="voided">Voided</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label class="text-xs font-medium text-muted-foreground block mb-1">Search</label>
+                        </select></div>
+                    <div><label class="text-xs font-medium text-muted-foreground block mb-1">Search</label>
                         <div class="relative">
                             <Search class="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
-                            <input
-                                v-model="ordSearch"
-                                type="text"
-                                placeholder="Order #, table, notes…"
+                            <input v-model="ordSearch" type="text" placeholder="Order #, table, notes…"
                                 class="rounded-lg border bg-background pl-8 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary w-48"
-                                @keydown.enter="generateReport"
-                            />
-                        </div>
-                    </div>
+                                @keydown.enter="generateReport" />
+                        </div></div>
                 </template>
 
-                <!-- Daily date picker -->
-                <div v-if="reportType === 'daily'">
+                <!-- Inventory filters -->
+                <template v-if="tab === 'inventory'">
+                    <div><label class="text-xs font-medium text-muted-foreground block mb-1">From</label>
+                        <input v-model="invDateFrom" type="date" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
+                    <div><label class="text-xs font-medium text-muted-foreground block mb-1">To</label>
+                        <input v-model="invDateTo" type="date" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
+                    <div><label class="text-xs font-medium text-muted-foreground block mb-1">Transaction Type</label>
+                        <select v-model="invType" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
+                            <option value="">All Types</option>
+                            <option value="stock_in">Stock In</option>
+                            <option value="stock_out">Stock Out</option>
+                            <option value="adjustment">Adjustment</option>
+                            <option value="waste">Waste</option>
+                            <option value="usage">Usage</option>
+                            <option value="purchase">Purchase</option>
+                        </select></div>
+                    <div><label class="text-xs font-medium text-muted-foreground block mb-1">Ingredient</label>
+                        <select v-model="invIngredientId" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
+                            <option value="">All Ingredients</option>
+                            <option v-for="ing in ingredients" :key="ing.id" :value="ing.id">{{ ing.name }}</option>
+                        </select></div>
+                </template>
+
+                <!-- Daily date -->
+                <div v-if="tab === 'daily'">
                     <label class="text-xs font-medium text-muted-foreground block mb-1">Date</label>
                     <input v-model="selectedDate" type="date" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
                 </div>
 
                 <!-- Monthly pickers -->
-                <template v-if="reportType === 'monthly'">
-                    <div>
-                        <label class="text-xs font-medium text-muted-foreground block mb-1">Year</label>
-                        <input v-model.number="selectedYear" type="number" min="2020" class="w-24 rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
-                    </div>
-                    <div>
-                        <label class="text-xs font-medium text-muted-foreground block mb-1">Month</label>
+                <template v-if="tab === 'monthly'">
+                    <div><label class="text-xs font-medium text-muted-foreground block mb-1">Year</label>
+                        <input v-model.number="selectedYear" type="number" min="2020" class="w-24 rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
+                    <div><label class="text-xs font-medium text-muted-foreground block mb-1">Month</label>
                         <select v-model.number="selectedMonth" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
                             <option v-for="m in 12" :key="m" :value="m">{{ monthName(m) }}</option>
-                        </select>
-                    </div>
+                        </select></div>
+                </template>
+
+                <!-- Product sales date range -->
+                <template v-if="tab === 'products'">
+                    <div><label class="text-xs font-medium text-muted-foreground block mb-1">From</label>
+                        <input v-model="prodDateFrom" type="date" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
+                    <div><label class="text-xs font-medium text-muted-foreground block mb-1">To</label>
+                        <input v-model="prodDateTo" type="date" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
                 </template>
 
                 <!-- Financial date range -->
-                <template v-if="reportType === 'financial'">
-                    <div>
-                        <label class="text-xs font-medium text-muted-foreground block mb-1">From</label>
-                        <input v-model="ftStartDate" type="date" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
-                    </div>
-                    <div>
-                        <label class="text-xs font-medium text-muted-foreground block mb-1">To</label>
-                        <input v-model="ftEndDate" type="date" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
-                    </div>
-                    <div>
-                        <label class="text-xs font-medium text-muted-foreground block mb-1">Type</label>
+                <template v-if="tab === 'financial'">
+                    <div><label class="text-xs font-medium text-muted-foreground block mb-1">From</label>
+                        <input v-model="ftStartDate" type="date" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
+                    <div><label class="text-xs font-medium text-muted-foreground block mb-1">To</label>
+                        <input v-model="ftEndDate" type="date" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
+                    <div><label class="text-xs font-medium text-muted-foreground block mb-1">Type</label>
                         <select v-model="ftTypeFilter" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
                             <option value="">All Types</option>
                             <option value="order">Orders</option>
                             <option value="payment">Payments</option>
                             <option value="expense">Expenses</option>
-                        </select>
-                    </div>
+                        </select></div>
                 </template>
 
-                <button
-                    @click="generateReport"
-                    :disabled="loading"
-                    class="rounded-lg bg-primary px-5 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 flex items-center gap-1.5"
-                >
+                <button @click="generateReport" :disabled="loading"
+                    class="rounded-lg bg-primary px-5 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 flex items-center gap-1.5">
                     <RefreshCw v-if="loading" class="h-3.5 w-3.5 animate-spin" />
                     <BarChart3 v-else class="h-3.5 w-3.5" />
                     Generate
@@ -408,29 +464,24 @@ onMounted(() => generateReport())
                 <button @click="exportCSV" class="rounded-lg border bg-background px-4 py-2 text-sm font-medium hover:bg-muted flex items-center gap-1.5">
                     <Download class="h-3.5 w-3.5" /> Export CSV
                 </button>
-                <button @click="printReport" class="rounded-lg border bg-background px-4 py-2 text-sm font-medium hover:bg-muted">
-                    Print
-                </button>
+                <button @click="printReport" class="rounded-lg border bg-background px-4 py-2 text-sm font-medium hover:bg-muted">Print</button>
             </div>
         </div>
 
-        <!-- ── Orders List ──────────────────────────────────────────────────── -->
-        <template v-if="reportType === 'orders'">
-            <!-- Summary row -->
+        <!-- ── Orders ─────────────────────────────────────────────────────────── -->
+        <template v-if="tab === 'orders'">
             <div v-if="ordersMeta" class="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 <div class="rounded-xl border bg-card p-4 shadow-sm">
                     <p class="text-xs text-muted-foreground mb-1 flex items-center gap-1"><ClipboardList class="h-3 w-3" /> Total Orders</p>
                     <p class="text-3xl font-black">{{ ordersMeta.total }}</p>
                 </div>
                 <div class="rounded-xl border bg-card p-4 shadow-sm">
-                    <p class="text-xs text-muted-foreground mb-1">Paid</p>
+                    <p class="text-xs text-muted-foreground mb-1">Paid (this page)</p>
                     <p class="text-3xl font-black text-green-600">{{ ordersData.filter(o => o.payment_status === 'paid').length }}</p>
-                    <p class="text-xs text-muted-foreground">on this page</p>
                 </div>
                 <div class="rounded-xl border bg-card p-4 shadow-sm">
-                    <p class="text-xs text-muted-foreground mb-1">Unpaid</p>
+                    <p class="text-xs text-muted-foreground mb-1">Unpaid (this page)</p>
                     <p class="text-3xl font-black text-yellow-600">{{ ordersData.filter(o => o.payment_status === 'pending').length }}</p>
-                    <p class="text-xs text-muted-foreground">on this page</p>
                 </div>
                 <div class="rounded-xl border bg-card p-4 shadow-sm">
                     <p class="text-xs text-muted-foreground mb-1 flex items-center gap-1"><TrendingUp class="h-3 w-3" /> Revenue (page)</p>
@@ -438,12 +489,9 @@ onMounted(() => generateReport())
                 </div>
             </div>
 
-            <!-- Table -->
             <div class="rounded-xl border bg-card shadow-sm overflow-hidden">
                 <div class="p-4 border-b flex items-center justify-between">
-                    <h2 class="font-bold text-sm flex items-center gap-2">
-                        <ShoppingBag class="h-4 w-4" /> Orders
-                    </h2>
+                    <h2 class="font-bold text-sm flex items-center gap-2"><ShoppingBag class="h-4 w-4" /> Orders</h2>
                     <span v-if="ordersMeta" class="text-xs text-muted-foreground">
                         Page {{ ordersMeta.current_page }} of {{ ordersMeta.last_page }} &nbsp;·&nbsp; {{ ordersMeta.total }} total
                     </span>
@@ -469,158 +517,117 @@ onMounted(() => generateReport())
                                     <p class="font-bold">#{{ order.id }}</p>
                                     <p v-if="order.queue_number" class="text-xs text-muted-foreground">Q{{ order.queue_number }}</p>
                                 </td>
-                                <td class="px-4 py-3 whitespace-nowrap text-muted-foreground text-xs">
-                                    {{ fmtDatetime(order.created_at) }}
-                                </td>
-                                <td class="px-4 py-3">
-                                    <span class="rounded-full bg-muted px-2 py-0.5 text-xs font-medium">
-                                        {{ orderTypeBadge(order.order_type) }}
-                                    </span>
-                                </td>
+                                <td class="px-4 py-3 whitespace-nowrap text-muted-foreground text-xs">{{ fmtDatetime(order.created_at) }}</td>
+                                <td class="px-4 py-3"><span class="rounded-full bg-muted px-2 py-0.5 text-xs font-medium">{{ orderTypeBadge(order.order_type) }}</span></td>
                                 <td class="px-4 py-3 text-muted-foreground">{{ order.table_number ?? '—' }}</td>
                                 <td class="px-4 py-3 text-center font-medium">{{ itemCount(order.items) }}</td>
-                                <td class="px-4 py-3">
-                                    <span :class="['rounded-full px-2 py-0.5 text-xs font-semibold capitalize', statusBadge(order.status)]">
-                                        {{ order.status }}
-                                    </span>
-                                </td>
-                                <td class="px-4 py-3">
-                                    <span :class="['rounded-full px-2 py-0.5 text-xs font-semibold capitalize', payBadge(order.payment_status)]">
-                                        {{ order.payment_status }}
-                                    </span>
-                                </td>
+                                <td class="px-4 py-3"><span :class="['rounded-full px-2 py-0.5 text-xs font-semibold capitalize', statusBadge(order.status)]">{{ order.status }}</span></td>
+                                <td class="px-4 py-3"><span :class="['rounded-full px-2 py-0.5 text-xs font-semibold capitalize', payBadge(order.payment_status)]">{{ order.payment_status }}</span></td>
                                 <td class="px-4 py-3 text-right font-bold">{{ fmt(order.total_amount) }}</td>
                                 <td class="px-4 py-3 text-xs text-muted-foreground max-w-[140px] truncate">{{ order.notes ?? '—' }}</td>
                             </tr>
                             <tr v-if="ordersData.length === 0 && !loading">
-                                <td colspan="9" class="px-4 py-10 text-center text-muted-foreground">
-                                    No orders found. Adjust filters and click Generate.
-                                </td>
+                                <td colspan="9" class="px-4 py-10 text-center text-muted-foreground">No orders found. Adjust filters and click Generate.</td>
                             </tr>
                         </tbody>
                     </table>
                 </div>
-                <!-- Pagination -->
                 <div v-if="ordersMeta && ordersMeta.last_page > 1" class="flex items-center justify-between px-4 py-3 border-t">
-                    <button
-                        @click="loadOrders(ordPage - 1)"
-                        :disabled="ordPage <= 1 || loading"
-                        class="flex items-center gap-1 rounded-lg border px-3 py-1.5 text-sm font-medium hover:bg-muted disabled:opacity-40"
-                    >
+                    <button @click="loadOrders(ordPage - 1)" :disabled="ordPage <= 1 || loading"
+                        class="flex items-center gap-1 rounded-lg border px-3 py-1.5 text-sm font-medium hover:bg-muted disabled:opacity-40">
                         <ChevronLeft class="h-3.5 w-3.5" /> Prev
                     </button>
-                    <span class="text-xs text-muted-foreground">
-                        Showing {{ ordersMeta.from }}–{{ ordersMeta.to }} of {{ ordersMeta.total }}
-                    </span>
-                    <button
-                        @click="loadOrders(ordPage + 1)"
-                        :disabled="ordPage >= ordersMeta.last_page || loading"
-                        class="flex items-center gap-1 rounded-lg border px-3 py-1.5 text-sm font-medium hover:bg-muted disabled:opacity-40"
-                    >
+                    <span class="text-xs text-muted-foreground">Showing {{ ordersMeta.from }}–{{ ordersMeta.to }} of {{ ordersMeta.total }}</span>
+                    <button @click="loadOrders(ordPage + 1)" :disabled="ordPage >= ordersMeta.last_page || loading"
+                        class="flex items-center gap-1 rounded-lg border px-3 py-1.5 text-sm font-medium hover:bg-muted disabled:opacity-40">
                         Next <ChevronRight class="h-3.5 w-3.5" />
                     </button>
                 </div>
             </div>
         </template>
 
-        <!-- ── Daily / Monthly Summary Cards ──────────────────────────────── -->
-        <template v-if="(reportType === 'daily' || reportType === 'monthly') && activeReport">
-            <div class="rounded-xl border bg-card p-4 shadow-sm">
-                <h2 class="font-bold text-base mb-4">
-                    <span v-if="reportType === 'daily'">Daily Sales — {{ (activeReport as any).date }}</span>
-                    <span v-else>Monthly Sales — {{ monthName(Number((activeReport as any).month?.split('-')[1])) }} {{ (activeReport as any).month?.split('-')[0] }}</span>
-                </h2>
-                <div class="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                    <div class="rounded-lg bg-muted/40 p-4">
-                        <p class="text-xs text-muted-foreground mb-1">Total Orders</p>
-                        <p class="text-3xl font-black">{{ activeReport.total_orders }}</p>
-                    </div>
-                    <div class="rounded-lg bg-green-50 dark:bg-green-950/20 p-4">
-                        <p class="text-xs text-muted-foreground mb-1 flex items-center gap-1"><TrendingUp class="h-3 w-3" /> Revenue</p>
-                        <p class="text-2xl font-black text-green-600">{{ fmt(activeReport.total_sales) }}</p>
-                    </div>
-                    <div class="rounded-lg bg-yellow-50 dark:bg-yellow-950/20 p-4">
-                        <p class="text-xs text-muted-foreground mb-1">Discounts</p>
-                        <p class="text-2xl font-black text-yellow-600">{{ fmt(activeReport.total_discount) }}</p>
-                    </div>
+        <!-- ── Inventory Transactions ──────────────────────────────────────────── -->
+        <template v-if="tab === 'inventory'">
+            <div v-if="invMeta" class="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                <div class="rounded-xl border bg-card p-4 shadow-sm">
+                    <p class="text-xs text-muted-foreground mb-1 flex items-center gap-1"><Package class="h-3 w-3" /> Total Transactions</p>
+                    <p class="text-3xl font-black">{{ invMeta.total }}</p>
+                </div>
+                <div class="rounded-xl border bg-card p-4 shadow-sm">
+                    <p class="text-xs text-muted-foreground mb-1">Stock In (page)</p>
+                    <p class="text-3xl font-black text-green-600">{{ invTransactions.filter(t => t.type === 'stock_in' || t.type === 'purchase').length }}</p>
+                </div>
+                <div class="rounded-xl border bg-card p-4 shadow-sm">
+                    <p class="text-xs text-muted-foreground mb-1">Stock Out / Usage (page)</p>
+                    <p class="text-3xl font-black text-red-600">{{ invTransactions.filter(t => ['stock_out','waste','usage'].includes(t.type)).length }}</p>
                 </div>
             </div>
-        </template>
 
-        <!-- ── Product Sales ───────────────────────────────────────────────── -->
-        <template v-if="reportType === 'products'">
             <div class="rounded-xl border bg-card shadow-sm overflow-hidden">
-                <div class="p-4 border-b">
-                    <h2 class="font-bold text-sm">Product Sales — This Month</h2>
+                <div class="p-4 border-b flex items-center justify-between">
+                    <h2 class="font-bold text-sm flex items-center gap-2"><Package class="h-4 w-4" /> Inventory Transactions</h2>
+                    <span v-if="invMeta" class="text-xs text-muted-foreground">
+                        Page {{ invMeta.current_page }} of {{ invMeta.last_page }} &nbsp;·&nbsp; {{ invMeta.total }} total
+                    </span>
                 </div>
                 <div class="overflow-x-auto">
                     <table class="w-full text-sm">
                         <thead class="bg-muted/50 text-muted-foreground text-xs uppercase tracking-wide">
                             <tr>
-                                <th class="px-4 py-3 text-left">#</th>
-                                <th class="px-4 py-3 text-left">Product</th>
-                                <th class="px-4 py-3 text-right">Qty Sold</th>
-                                <th class="px-4 py-3 text-right">Revenue</th>
-                                <th class="px-4 py-3 text-left">Share</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y">
-                            <tr v-for="(item, i) in topProducts" :key="item.product_id" class="hover:bg-muted/20">
-                                <td class="px-4 py-2 text-muted-foreground">{{ i + 1 }}</td>
-                                <td class="px-4 py-2 font-medium">{{ item.product_name }}</td>
-                                <td class="px-4 py-2 text-right">{{ item.total_quantity }}</td>
-                                <td class="px-4 py-2 text-right font-bold text-green-600">{{ fmt(item.total_sales) }}</td>
-                                <td class="px-4 py-2 w-40">
-                                    <div class="flex items-center gap-2">
-                                        <div class="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
-                                            <div
-                                                class="h-full bg-primary rounded-full"
-                                                :style="{ width: topProducts[0]?.total_sales ? ((Number(item.total_sales) / Number(topProducts[0].total_sales)) * 100) + '%' : '0%' }"
-                                            />
-                                        </div>
-                                    </div>
-                                </td>
-                            </tr>
-                            <tr v-if="topProducts.length === 0">
-                                <td colspan="5" class="px-4 py-8 text-center text-muted-foreground">No data available</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </template>
-
-        <!-- ── Inventory Valuation ─────────────────────────────────────────── -->
-        <template v-if="reportType === 'inventory' && inventoryReport.length > 0">
-            <div class="rounded-xl border bg-card shadow-sm overflow-hidden">
-                <div class="p-4 border-b"><h2 class="font-bold text-sm">Inventory Valuation</h2></div>
-                <div class="overflow-x-auto">
-                    <table class="w-full text-sm">
-                        <thead class="bg-muted/50 text-muted-foreground text-xs uppercase tracking-wide">
-                            <tr>
+                                <th class="px-4 py-3 text-left">Date</th>
                                 <th class="px-4 py-3 text-left">Ingredient</th>
-                                <th class="px-4 py-3 text-right">Stock</th>
-                                <th class="px-4 py-3 text-left">Unit</th>
+                                <th class="px-4 py-3 text-left">Type</th>
+                                <th class="px-4 py-3 text-right">Qty</th>
+                                <th class="px-4 py-3 text-right">Before</th>
+                                <th class="px-4 py-3 text-right">After</th>
+                                <th class="px-4 py-3 text-left">Reference</th>
+                                <th class="px-4 py-3 text-left">Notes</th>
+                                <th class="px-4 py-3 text-left">By</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y">
-                            <tr v-for="item in inventoryReport" :key="item.id" class="hover:bg-muted/20">
-                                <td class="px-4 py-2 font-medium">{{ item.name }}</td>
-                                <td class="px-4 py-2 text-right">{{ item.current_quantity }}</td>
-                                <td class="px-4 py-2 text-muted-foreground">{{ item.unit }}</td>
+                            <tr v-for="tx in invTransactions" :key="tx.id" class="hover:bg-muted/20">
+                                <td class="px-4 py-2 text-muted-foreground whitespace-nowrap text-xs">{{ tx.created_at?.slice(0, 10) }}</td>
+                                <td class="px-4 py-2 font-medium">
+                                    {{ tx.ingredient?.name ?? '—' }}
+                                    <span class="text-xs text-muted-foreground ml-1">{{ tx.ingredient?.unit }}</span>
+                                </td>
+                                <td class="px-4 py-2">
+                                    <span :class="['rounded-full px-2 py-0.5 text-xs font-semibold capitalize', invTypeBadge(tx.type)]">
+                                        {{ tx.type.replace('_', ' ') }}
+                                    </span>
+                                </td>
+                                <td class="px-4 py-2 text-right font-bold" :class="['stock_in','purchase'].includes(tx.type) ? 'text-green-600' : 'text-red-600'">
+                                    {{ ['stock_in','purchase'].includes(tx.type) ? '+' : '-' }}{{ tx.quantity }}
+                                </td>
+                                <td class="px-4 py-2 text-right text-muted-foreground">{{ tx.old_quantity }}</td>
+                                <td class="px-4 py-2 text-right font-medium">{{ tx.new_quantity }}</td>
+                                <td class="px-4 py-2 text-xs text-muted-foreground">{{ tx.reference ?? '—' }}</td>
+                                <td class="px-4 py-2 text-xs text-muted-foreground max-w-[140px] truncate">{{ tx.notes ?? '—' }}</td>
+                                <td class="px-4 py-2 text-xs text-muted-foreground">{{ tx.user?.name ?? '—' }}</td>
+                            </tr>
+                            <tr v-if="invTransactions.length === 0 && !loading">
+                                <td colspan="9" class="px-4 py-10 text-center text-muted-foreground">No transactions found. Adjust filters and click Generate.</td>
                             </tr>
                         </tbody>
                     </table>
                 </div>
+                <div v-if="invMeta && invMeta.last_page > 1" class="flex items-center justify-between px-4 py-3 border-t">
+                    <button @click="loadInventory(invPage - 1)" :disabled="invPage <= 1 || loading"
+                        class="flex items-center gap-1 rounded-lg border px-3 py-1.5 text-sm font-medium hover:bg-muted disabled:opacity-40">
+                        <ChevronLeft class="h-3.5 w-3.5" /> Prev
+                    </button>
+                    <span class="text-xs text-muted-foreground">Showing {{ invMeta.from }}–{{ invMeta.to }} of {{ invMeta.total }}</span>
+                    <button @click="loadInventory(invPage + 1)" :disabled="invPage >= invMeta.last_page || loading"
+                        class="flex items-center gap-1 rounded-lg border px-3 py-1.5 text-sm font-medium hover:bg-muted disabled:opacity-40">
+                        Next <ChevronRight class="h-3.5 w-3.5" />
+                    </button>
+                </div>
             </div>
         </template>
-        <div v-if="reportType === 'inventory' && inventoryReport.length === 0 && !loading" class="rounded-xl border bg-card p-10 text-center shadow-sm text-muted-foreground text-sm">
-            Click <strong>Generate</strong> to load the inventory valuation report.
-        </div>
 
-        <!-- ── Financial Records ───────────────────────────────────────────── -->
-        <template v-if="reportType === 'financial'">
-            <!-- Summary Cards -->
+        <!-- ── Financial ──────────────────────────────────────────────────────── -->
+        <template v-if="tab === 'financial'">
             <div v-if="ftSummary" class="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 <div class="rounded-xl border bg-card p-4 shadow-sm">
                     <p class="text-xs text-muted-foreground mb-1 flex items-center gap-1"><BarChart3 class="h-3 w-3" /> Orders</p>
@@ -639,14 +646,11 @@ onMounted(() => generateReport())
                 </div>
                 <div :class="['rounded-xl border p-4 shadow-sm', ftSummary.net >= 0 ? 'bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800' : 'bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-800']">
                     <p class="text-xs text-muted-foreground mb-1 flex items-center gap-1"><DollarSign class="h-3 w-3" /> Net Cash</p>
-                    <p class="text-2xl font-black" :class="ftSummary.net >= 0 ? 'text-green-700 dark:text-green-400' : 'text-red-600'">
-                        {{ fmt(ftSummary.net) }}
-                    </p>
+                    <p class="text-2xl font-black" :class="ftSummary.net >= 0 ? 'text-green-700 dark:text-green-400' : 'text-red-600'">{{ fmt(ftSummary.net) }}</p>
                     <p class="text-xs text-muted-foreground mt-0.5">Payments − Expenses</p>
                 </div>
             </div>
 
-            <!-- Payment by Tender -->
             <div v-if="ftSummary && ftSummary.by_tender.length > 0" class="rounded-xl border bg-card shadow-sm p-4">
                 <h3 class="font-bold text-sm mb-3">Payments by Tender</h3>
                 <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -660,7 +664,6 @@ onMounted(() => generateReport())
                 </div>
             </div>
 
-            <!-- Add Expense button + form -->
             <div class="flex items-center justify-between">
                 <h3 class="font-bold text-sm text-muted-foreground uppercase tracking-wider">Transaction Log</h3>
                 <button @click="showExpenseForm = !showExpenseForm" class="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium hover:bg-muted transition">
@@ -693,7 +696,6 @@ onMounted(() => generateReport())
                 </div>
             </div>
 
-            <!-- Transaction list -->
             <div v-if="ftTransactions.length > 0" class="rounded-xl border bg-card shadow-sm overflow-hidden">
                 <div class="overflow-x-auto">
                     <table class="w-full text-sm">
@@ -710,9 +712,7 @@ onMounted(() => generateReport())
                         <tbody class="divide-y">
                             <tr v-for="tx in ftTransactions" :key="tx.id" class="hover:bg-muted/20">
                                 <td class="px-4 py-2 text-muted-foreground whitespace-nowrap">{{ tx.transacted_at?.slice(0, 10) }}</td>
-                                <td class="px-4 py-2">
-                                    <span :class="['rounded-full px-2 py-0.5 text-xs font-semibold', typeBadgeClass(tx.type)]">{{ typeLabel(tx.type) }}</span>
-                                </td>
+                                <td class="px-4 py-2"><span :class="['rounded-full px-2 py-0.5 text-xs font-semibold', typeBadgeClass(tx.type)]">{{ typeLabel(tx.type) }}</span></td>
                                 <td class="px-4 py-2 max-w-xs truncate">{{ tx.description }}</td>
                                 <td class="px-4 py-2 text-muted-foreground">{{ tx.tender?.name ?? '—' }}</td>
                                 <td class="px-4 py-2 text-right font-bold" :class="tx.type === 'expense' ? 'text-red-600' : 'text-green-600'">
@@ -727,12 +727,93 @@ onMounted(() => generateReport())
                     Showing {{ ftTransactions.length }} of {{ ftMeta.total }} transactions
                 </div>
             </div>
-
-            <div v-if="ftTransactions.length === 0 && !loading && !ftSummary" class="rounded-xl border bg-card p-10 text-center shadow-sm text-muted-foreground text-sm">
+            <div v-else-if="!loading" class="rounded-xl border bg-card p-10 text-center shadow-sm text-muted-foreground text-sm">
                 Select a date range and click <strong>Generate</strong> to load financial records.
             </div>
-            <div v-else-if="ftTransactions.length === 0 && !loading && ftSummary" class="rounded-xl border bg-card p-6 text-center shadow-sm text-muted-foreground text-sm">
-                No transactions found for this period.
+        </template>
+
+        <!-- ── Daily Sales ────────────────────────────────────────────────────── -->
+        <template v-if="tab === 'daily' && dailyReport">
+            <div class="rounded-xl border bg-card p-4 shadow-sm">
+                <h2 class="font-bold text-base mb-4">Daily Sales — {{ dailyReport.date }}</h2>
+                <div class="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                    <div class="rounded-lg bg-muted/40 p-4">
+                        <p class="text-xs text-muted-foreground mb-1">Total Orders</p>
+                        <p class="text-3xl font-black">{{ dailyReport.total_orders }}</p>
+                    </div>
+                    <div class="rounded-lg bg-green-50 dark:bg-green-950/20 p-4">
+                        <p class="text-xs text-muted-foreground mb-1 flex items-center gap-1"><TrendingUp class="h-3 w-3" /> Revenue</p>
+                        <p class="text-2xl font-black text-green-600">{{ fmt(dailyReport.total_sales) }}</p>
+                    </div>
+                    <div class="rounded-lg bg-yellow-50 dark:bg-yellow-950/20 p-4">
+                        <p class="text-xs text-muted-foreground mb-1">Discounts</p>
+                        <p class="text-2xl font-black text-yellow-600">{{ fmt(dailyReport.total_discount) }}</p>
+                    </div>
+                </div>
+            </div>
+        </template>
+
+        <!-- ── Monthly Sales ──────────────────────────────────────────────────── -->
+        <template v-if="tab === 'monthly' && monthlyReport">
+            <div class="rounded-xl border bg-card p-4 shadow-sm">
+                <h2 class="font-bold text-base mb-4">
+                    Monthly Sales — {{ monthName(Number(monthlyReport.month?.split('-')[1])) }} {{ monthlyReport.month?.split('-')[0] }}
+                </h2>
+                <div class="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                    <div class="rounded-lg bg-muted/40 p-4">
+                        <p class="text-xs text-muted-foreground mb-1">Total Orders</p>
+                        <p class="text-3xl font-black">{{ monthlyReport.total_orders }}</p>
+                    </div>
+                    <div class="rounded-lg bg-green-50 dark:bg-green-950/20 p-4">
+                        <p class="text-xs text-muted-foreground mb-1 flex items-center gap-1"><TrendingUp class="h-3 w-3" /> Revenue</p>
+                        <p class="text-2xl font-black text-green-600">{{ fmt(monthlyReport.total_sales) }}</p>
+                    </div>
+                    <div class="rounded-lg bg-yellow-50 dark:bg-yellow-950/20 p-4">
+                        <p class="text-xs text-muted-foreground mb-1">Discounts</p>
+                        <p class="text-2xl font-black text-yellow-600">{{ fmt(monthlyReport.total_discount) }}</p>
+                    </div>
+                </div>
+            </div>
+        </template>
+
+        <!-- ── Product Sales ──────────────────────────────────────────────────── -->
+        <template v-if="tab === 'products'">
+            <div class="rounded-xl border bg-card shadow-sm overflow-hidden">
+                <div class="p-4 border-b">
+                    <h2 class="font-bold text-sm">Product Sales — {{ prodDateFrom }} to {{ prodDateTo }}</h2>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead class="bg-muted/50 text-muted-foreground text-xs uppercase tracking-wide">
+                            <tr>
+                                <th class="px-4 py-3 text-left">#</th>
+                                <th class="px-4 py-3 text-left">Product</th>
+                                <th class="px-4 py-3 text-right">Qty Sold</th>
+                                <th class="px-4 py-3 text-right">Revenue</th>
+                                <th class="px-4 py-3 text-left">Share</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y">
+                            <tr v-for="(item, i) in topProducts" :key="item.product_id" class="hover:bg-muted/20">
+                                <td class="px-4 py-2 text-muted-foreground">{{ i + 1 }}</td>
+                                <td class="px-4 py-2 font-medium">{{ item.product_name }}</td>
+                                <td class="px-4 py-2 text-right">{{ item.total_quantity }}</td>
+                                <td class="px-4 py-2 text-right font-bold text-green-600">{{ fmt(item.total_sales) }}</td>
+                                <td class="px-4 py-2 w-40">
+                                    <div class="flex items-center gap-2">
+                                        <div class="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                                            <div class="h-full bg-primary rounded-full"
+                                                :style="{ width: topProducts[0]?.total_sales ? ((Number(item.total_sales) / Number(topProducts[0].total_sales)) * 100) + '%' : '0%' }" />
+                                        </div>
+                                    </div>
+                                </td>
+                            </tr>
+                            <tr v-if="topProducts.length === 0">
+                                <td colspan="5" class="px-4 py-8 text-center text-muted-foreground">No data available for this period.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </template>
     </div>

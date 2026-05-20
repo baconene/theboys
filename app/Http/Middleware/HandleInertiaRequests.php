@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Middleware;
 
 class HandleInertiaRequests extends Middleware
@@ -27,6 +28,9 @@ class HandleInertiaRequests extends Middleware
                 'permissions' => $user ? $user->getAllPermissions()->pluck('name') : [],
             ],
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
+            'logoUrl' => Storage::disk('public')->exists('logo/current.png')
+                ? Storage::disk('public')->url('logo/current.png')
+                : null,
         ];
     }
 }
