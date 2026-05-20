@@ -259,8 +259,22 @@ const monthlySummary = computed(() => {
         one_time: 0, daily: 30, weekly: 4.33, bi_weekly: 2.17,
         monthly: 1, quarterly: 1/3, semi_annual: 1/6, annual: 1/12,
     }
-    return bills.value.filter(b => b.is_active).reduce((sum, b) => sum + b.amount * (multiplier[b.frequency] ?? 0), 0)
+    // Only include recurring bills, not payment plans (is_installment = true)
+    return bills.value.filter(b => b.is_active && !b.is_installment).reduce((sum, b) => sum + b.amount * (multiplier[b.frequency] ?? 0), 0)
 })
+
+const annualSummary = computed(() => {
+    // For accurate annual exposure, use the 12-month forecast which properly handles payment plans
+    if (!billForecast.value) return 0
+    const forecast12m = billForecast.value.by_month[Object.keys(billForecast.value.by_month).length - 1] ? billForecast.value.total_forecast : 0
+    // If we don't have a 12-month forecast cached, use the 12-month recurring estimate plus actual installments
+    const recurringAnnual = monthlySummary.value * 12
+    const paymentPlansTotal = bills.value
+        .filter(b => b.is_active && b.is_installment)
+        .reduce((sum, b) => sum + (b.installments?.reduce((isum, i) => isum + (i.paid_at ? 0 : i.amount), 0) ?? 0), 0)
+    return recurringAnnual + paymentPlansTotal
+})
+
 const overdueBills = computed(() => bills.value.filter(b => b.status === 'overdue'))
 const dueSoonBills = computed(() => bills.value.filter(b => b.status === 'due_today' || b.status === 'upcoming'))
 
@@ -1229,8 +1243,8 @@ onMounted(async () => {
                 </div>
                 <div class="rounded-xl border bg-card p-4 shadow-sm">
                     <p class="text-xs text-muted-foreground mb-1">Annual Exposure</p>
-                    <p class="text-xl font-black">{{ fmt(monthlySummary * 12) }}</p>
-                    <p class="text-xs text-muted-foreground mt-0.5">est. per year</p>
+                    <p class="text-xl font-black">{{ fmt(annualSummary) }}</p>
+                    <p class="text-xs text-muted-foreground mt-0.5">recurring + fixed payments</p>
                 </div>
                 <div :class="['rounded-xl border p-4 shadow-sm', overdueBills.length > 0 ? 'bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-800' : 'bg-card']">
                     <p class="text-xs text-muted-foreground mb-1">Overdue</p>
