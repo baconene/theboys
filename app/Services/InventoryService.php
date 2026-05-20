@@ -13,7 +13,7 @@ class InventoryService
     public function deductForOrder(OrderItem $orderItem): bool
     {
         $product = $orderItem->product;
-        $recipes = $product->recipes;
+        $recipes = $product->recipes()->with('ingredient')->get();
 
         foreach ($recipes as $recipe) {
             $ingredient = $recipe->ingredient;
@@ -22,15 +22,16 @@ class InventoryService
                 continue;
             }
 
-            $requiredQuantity = $recipe->quantity * $orderItem->quantity;
+            $required  = (float) $recipe->quantity * (int) $orderItem->quantity;
+            $available = (float) $ingredient->current_quantity;
 
-            if ($ingredient->current_quantity < $requiredQuantity) {
+            if ($available < $required) {
                 return false;
             }
 
             $this->recordTransaction(
                 $ingredient,
-                $requiredQuantity,
+                $required,
                 InventoryTransactionType::STOCK_OUT,
                 'order_' . $orderItem->order_id
             );
@@ -67,10 +68,13 @@ class InventoryService
         ]);
     }
 
-    public function checkAvailability(OrderItem $orderItem): bool
+    /**
+     * Returns null if stock is sufficient, or a human-readable error string naming the short ingredient.
+     */
+    public function checkAvailability(OrderItem $orderItem): ?string
     {
         $product = $orderItem->product;
-        $recipes = $product->recipes;
+        $recipes = $product->recipes()->with('ingredient')->get();
 
         foreach ($recipes as $recipe) {
             $ingredient = $recipe->ingredient;
@@ -79,14 +83,23 @@ class InventoryService
                 continue;
             }
 
-            $requiredQuantity = $recipe->quantity * $orderItem->quantity;
+            $required  = (float) $recipe->quantity * (int) $orderItem->quantity;
+            $available = (float) $ingredient->current_quantity;
 
-            if ($ingredient->current_quantity < $requiredQuantity) {
-                return false;
+            if ($available < $required) {
+                return sprintf(
+                    'Not enough %s for %s (need %.3f %s, have %.3f %s)',
+                    $ingredient->name,
+                    $product->name,
+                    $required,
+                    $ingredient->unit,
+                    $available,
+                    $ingredient->unit,
+                );
             }
         }
 
-        return true;
+        return null;
     }
 
     public function getLowStockItems()

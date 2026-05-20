@@ -70,8 +70,9 @@ class OrderService
                 'unit_cost'  => (float) ($product->cost ?? 0),
             ]);
 
-            if (!$this->inventoryService->checkAvailability($orderItem)) {
-                abort(422, "Insufficient inventory for {$product->name}");
+            $stockError = $this->inventoryService->checkAvailability($orderItem);
+            if ($stockError !== null) {
+                abort(422, $stockError);
             }
 
             $orderItem->order_id = $order->id;
