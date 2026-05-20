@@ -1,6 +1,9 @@
 <script setup lang="ts">
+import { ref } from 'vue'
 import { Head, router } from '@inertiajs/vue3'
-import { ArrowLeft, ShoppingBag, User, MapPin, Clock, CreditCard, Package, Receipt } from 'lucide-vue-next'
+import { ArrowLeft, ShoppingBag, User, MapPin, Clock, CreditCard, Package, Receipt, Printer } from 'lucide-vue-next'
+import { toast } from 'vue-sonner'
+import { printReceipt } from '@/utils/printReceipt'
 
 defineOptions({
     layout: {
@@ -11,14 +14,14 @@ defineOptions({
     },
 })
 
-interface Modifier   { name: string; price: number }
-interface OrderItem  {
+interface Modifier  { name: string; price: number }
+interface OrderItem {
     id: number; product_name: string; category_name: string | null
     quantity: number; unit_price: number; unit_cost: number
     subtotal: number; cost_subtotal: number
     special_instructions: string | null; modifiers: Modifier[]
 }
-interface Payment    { id: number; amount: number; tender: string; status: string; reference: string | null; created_at: string }
+interface Payment { id: number; amount: number; tender: string; status: string; reference: string | null; created_at: string }
 interface Order {
     id: number; queue_number: number | null; order_type: string; order_type_label: string
     status: string; payment_status: string; table_number: string | null
@@ -29,6 +32,8 @@ interface Order {
 }
 
 const props = defineProps<{ order: Order }>()
+
+const printing = ref(false)
 
 const fmt = (v: number) => '₱' + v.toLocaleString('en-PH', { minimumFractionDigits: 2 })
 
@@ -55,24 +60,61 @@ const payColor = (s: string) => ({
     voided:   'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
 }[s] ?? 'bg-muted text-muted-foreground')
 
-const totalCost = props.order.items.reduce((s, i) => s + i.cost_subtotal, 0)
+const totalCost   = props.order.items.reduce((s, i) => s + i.cost_subtotal, 0)
 const grossProfit = props.order.total_amount - totalCost
+
+// ── Reprint ──────────────────────────────────────────────────────────────────
+const reprintReceipt = async () => {
+    printing.value = true
+    try {
+        const paidPayment = props.order.payments.find(p => p.status === 'paid') ?? props.order.payments[0]
+        const amountTendered = paidPayment?.amount ?? props.order.total_amount
+        await printReceipt({
+            orderId:         props.order.id,
+            queueNumber:     props.order.queue_number,
+            orderType:       props.order.order_type,
+            tableNumber:     props.order.table_number,
+            customerName:    props.order.customer_name,
+            customerContact: props.order.customer_contact,
+            customerAddress: props.order.customer_address,
+            notes:           props.order.notes,
+            items:           props.order.items.map(i => ({
+                name:       i.product_name,
+                quantity:   i.quantity,
+                unit_price: i.unit_price,
+            })),
+            subtotal:        props.order.subtotal,
+            discount:        props.order.discount_amount,
+            total:           props.order.total_amount,
+            tenderName:      paidPayment?.tender ?? 'Cash',
+            amountTendered,
+            change:          Math.max(0, amountTendered - props.order.total_amount),
+            paid:            props.order.payment_status === 'paid',
+        })
+        toast.success('Receipt sent to printer')
+    } catch (err: any) {
+        toast.error(err?.message ?? 'Print failed')
+    } finally {
+        printing.value = false
+    }
+}
 </script>
 
 <template>
     <Head :title="`Order #${order.id}`" />
 
-    <div class="space-y-5 max-w-4xl">
+    <div class="max-w-3xl mx-auto space-y-5">
+
         <!-- Back + Header -->
         <div class="flex items-center gap-3">
-            <button @click="router.visit('/inventory')"
-                class="rounded-lg border p-2 hover:bg-muted text-muted-foreground">
+            <button @click="router.history.back()"
+                class="rounded-lg border p-2 hover:bg-muted text-muted-foreground shrink-0">
                 <ArrowLeft class="h-4 w-4" />
             </button>
-            <div class="flex-1">
-                <div class="flex items-center gap-3 flex-wrap">
+            <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2 flex-wrap">
                     <h1 class="text-xl font-black flex items-center gap-2">
-                        <ShoppingBag class="h-5 w-5 text-primary" />
+                        <ShoppingBag class="h-5 w-5 text-primary shrink-0" />
                         Order #{{ order.id }}
                     </h1>
                     <span v-if="order.queue_number" class="rounded-full bg-muted px-2.5 py-0.5 text-xs font-semibold">
@@ -85,38 +127,46 @@ const grossProfit = props.order.total_amount - totalCost
                         {{ order.payment_status }}
                     </span>
                 </div>
-                <p class="text-xs text-muted-foreground mt-0.5">
+                <p class="text-xs text-muted-foreground mt-0.5 truncate">
                     {{ order.order_type_label }}
                     <template v-if="order.table_number"> · Table {{ order.table_number }}</template>
                     <template v-if="order.created_by"> · by {{ order.created_by }}</template>
                 </p>
             </div>
+            <button @click="reprintReceipt" :disabled="printing"
+                class="flex items-center gap-2 rounded-lg border bg-card px-4 py-2 text-sm font-semibold hover:bg-muted disabled:opacity-50 shrink-0 transition-colors">
+                <Printer class="h-4 w-4" />
+                {{ printing ? 'Printing…' : 'Reprint Receipt' }}
+            </button>
         </div>
 
+        <!-- Timeline + Customer -->
         <div class="grid sm:grid-cols-2 gap-4">
-            <!-- Order info -->
             <div class="rounded-xl border bg-card shadow-sm p-4 space-y-3">
                 <h3 class="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
                     <Clock class="h-3.5 w-3.5" /> Timeline
                 </h3>
                 <div class="space-y-1.5 text-sm">
-                    <div class="flex justify-between">
-                        <span class="text-muted-foreground">Placed</span>
-                        <span class="font-medium">{{ fmtDatetime(order.created_at) }}</span>
+                    <div class="flex justify-between gap-4">
+                        <span class="text-muted-foreground shrink-0">Placed</span>
+                        <span class="font-medium text-right">{{ fmtDatetime(order.created_at) }}</span>
                     </div>
-                    <div class="flex justify-between">
-                        <span class="text-muted-foreground">Completed</span>
-                        <span class="font-medium">{{ fmtDatetime(order.completed_at) }}</span>
+                    <div class="flex justify-between gap-4">
+                        <span class="text-muted-foreground shrink-0">Completed</span>
+                        <span class="font-medium text-right">{{ fmtDatetime(order.completed_at) }}</span>
                     </div>
                 </div>
             </div>
 
-            <!-- Customer info (takeout / delivery) -->
             <div v-if="order.customer_name || order.table_number" class="rounded-xl border bg-card shadow-sm p-4 space-y-3">
                 <h3 class="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
                     <User class="h-3.5 w-3.5" /> Customer
                 </h3>
                 <div class="space-y-1.5 text-sm">
+                    <div v-if="order.table_number" class="flex justify-between">
+                        <span class="text-muted-foreground">Table</span>
+                        <span class="font-medium">{{ order.table_number }}</span>
+                    </div>
                     <div v-if="order.customer_name" class="flex justify-between">
                         <span class="text-muted-foreground">Name</span>
                         <span class="font-medium">{{ order.customer_name }}</span>
@@ -126,12 +176,31 @@ const grossProfit = props.order.total_amount - totalCost
                         <span class="font-medium">{{ order.customer_contact }}</span>
                     </div>
                     <div v-if="order.customer_address" class="flex items-start justify-between gap-4">
-                        <span class="text-muted-foreground flex items-center gap-1"><MapPin class="h-3 w-3" /> Address</span>
+                        <span class="text-muted-foreground flex items-center gap-1 shrink-0">
+                            <MapPin class="h-3 w-3" /> Address
+                        </span>
                         <span class="font-medium text-right">{{ order.customer_address }}</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Fill second column if no customer card -->
+            <div v-else class="rounded-xl border bg-card shadow-sm p-4 space-y-3">
+                <h3 class="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                    <ShoppingBag class="h-3.5 w-3.5" /> Order Info
+                </h3>
+                <div class="space-y-1.5 text-sm">
+                    <div class="flex justify-between">
+                        <span class="text-muted-foreground">Type</span>
+                        <span class="font-medium">{{ order.order_type_label }}</span>
                     </div>
                     <div v-if="order.table_number" class="flex justify-between">
                         <span class="text-muted-foreground">Table</span>
                         <span class="font-medium">{{ order.table_number }}</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-muted-foreground">Cashier</span>
+                        <span class="font-medium">{{ order.created_by ?? '—' }}</span>
                     </div>
                 </div>
             </div>
@@ -181,8 +250,8 @@ const grossProfit = props.order.total_amount - totalCost
             </div>
         </div>
 
+        <!-- Totals + Payments -->
         <div class="grid sm:grid-cols-2 gap-4">
-            <!-- Totals -->
             <div class="rounded-xl border bg-card shadow-sm p-4 space-y-2">
                 <h3 class="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
                     <Receipt class="h-3.5 w-3.5" /> Totals
@@ -218,7 +287,6 @@ const grossProfit = props.order.total_amount - totalCost
                 </div>
             </div>
 
-            <!-- Payments -->
             <div class="rounded-xl border bg-card shadow-sm p-4 space-y-3">
                 <h3 class="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
                     <CreditCard class="h-3.5 w-3.5" /> Payments
@@ -247,6 +315,15 @@ const grossProfit = props.order.total_amount - totalCost
         <div v-if="order.notes" class="rounded-xl border bg-card shadow-sm p-4">
             <p class="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">Notes</p>
             <p class="text-sm">{{ order.notes }}</p>
+        </div>
+
+        <!-- Reprint footer button (mobile-friendly duplicate) -->
+        <div class="flex justify-center pb-4">
+            <button @click="reprintReceipt" :disabled="printing"
+                class="flex items-center gap-2 rounded-xl bg-primary px-6 py-2.5 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors">
+                <Printer class="h-4 w-4" />
+                {{ printing ? 'Printing…' : 'Reprint Receipt' }}
+            </button>
         </div>
     </div>
 </template>
