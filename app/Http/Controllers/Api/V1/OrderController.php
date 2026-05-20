@@ -31,6 +31,7 @@ class OrderController extends Controller
         $orders = Order::with(['items.product', 'user', 'queueNumber'])
             ->when($request->status, fn($q) => $q->where('status', $request->status))
             ->when($request->payment_status, fn($q) => $q->where('payment_status', $request->payment_status))
+            ->when($request->exclude_cancelled, fn($q) => $q->where('status', '!=', 'cancelled'))
             ->when($request->date_from, fn($q) => $q->whereDate('created_at', '>=', $request->date_from))
             ->when($request->date_to, fn($q) => $q->whereDate('created_at', '<=', $request->date_to))
             ->when($request->search, fn($q) => $q->where(function ($q) use ($request) {

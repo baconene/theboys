@@ -318,10 +318,14 @@ const printReceipt = async () => {
 const loadUnpaidOrders = async () => {
     loadingUnpaid.value = true
     try {
-        const res = await api.get('/api/v1/orders', { params: { payment_status: 'pending' } })
-        unpaidOrders.value = res.data.data ?? []
-    } catch {
-        toast.error('Failed to load pending orders')
+        const res = await api.get('/api/v1/orders', { params: { payment_status: 'pending', per_page: 50, exclude_cancelled: 1 } })
+        // Handle both paginated ({ data: [...] }) and plain array responses
+        const raw = res.data.data ?? res.data
+        unpaidOrders.value = Array.isArray(raw) ? raw : []
+        console.log('[PendingOrders] fetched', unpaidOrders.value.length, 'orders', res.data)
+    } catch (err: any) {
+        console.error('[PendingOrders] fetch error', err)
+        toast.error(err.response?.data?.message ?? 'Failed to load pending orders')
     } finally {
         loadingUnpaid.value = false
     }
@@ -951,7 +955,7 @@ onMounted(loadTenders)
                                     </div>
                                     <p v-if="order.customer_name" class="text-xs text-muted-foreground truncate mt-0.5">{{ order.customer_name }}</p>
                                     <p class="text-xs text-muted-foreground truncate mt-0.5">
-                                        {{ order.items.map(i => `${i.quantity}× ${i.product.name}`).join(', ') }}
+                                        {{ (order.items ?? []).map(i => `${i.quantity}× ${i.product?.name ?? '?'}`).join(', ') }}
                                     </p>
                                     <p class="text-xs text-muted-foreground mt-0.5">
                                         {{ new Date(order.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}
