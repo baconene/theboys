@@ -9,25 +9,60 @@ use Illuminate\Http\Request;
 class FinancialTransactionController extends Controller {
     public function index(Request $request): JsonResponse {
         $this->checkReports();
+        $includeCogs = $request->boolean('include_cogs', true);
 
-        // Order debits are excluded from financial view — they're captured via payment credits
+        $noCogs = fn ($q) => $q->where(fn ($inner) =>
+            $inner->where('type', '!=', 'expense')
+                  ->orWhere(fn ($q2) => $q2->where('type', 'expense')->where('description', 'not like', 'COGS:%'))
+        );
+
+        // Opening financial balance: sum of all visible financial tx BEFORE the filtered period.
+        // This anchors the running balance correctly even when a date range is applied.
+        $openingBalance = 0.0;
+        if ($request->start_date) {
+            $openingBalance = (float) (FinancialTransaction::where('type', '!=', 'order')
+                ->when(! $includeCogs, $noCogs)
+                ->whereDate('transacted_at', '<', $request->start_date)
+                ->selectRaw("SUM(CASE WHEN type IN ('payment','income_adjustment') THEN amount ELSE -amount END) as bal")
+                ->value('bal') ?? 0);
+        }
+
+        // Compute financial_balance for every visible tx in the period (chronologically, no type filter —
+        // the balance reflects the full financial picture regardless of which type the user is filtering).
+        $periodTx = FinancialTransaction::where('type', '!=', 'order')
+            ->when(! $includeCogs, $noCogs)
+            ->when($request->start_date, fn ($q) => $q->whereDate('transacted_at', '>=', $request->start_date))
+            ->when($request->end_date,   fn ($q) => $q->whereDate('transacted_at', '<=', $request->end_date))
+            ->orderBy('transacted_at')->orderBy('id')
+            ->select(['id', 'type', 'amount'])
+            ->get();
+
+        $bal    = $openingBalance;
+        $balMap = [];
+        foreach ($periodTx as $tx) {
+            $bal = round($bal + (in_array($tx->type, ['payment', 'income_adjustment'])
+                ? (float) $tx->amount : -(float) $tx->amount), 2);
+            $balMap[$tx->id] = $bal;
+        }
+
+        // Paginated display query — type filter applies here but not to the balance map above.
         $q = FinancialTransaction::with(['order', 'tender', 'user'])
             ->where('type', '!=', 'order')
+            ->when(! $includeCogs, $noCogs)
             ->orderByDesc('transacted_at')
             ->orderByDesc('id');
 
-        if ($request->type) $q->where('type', $request->type);
+        if ($request->type)       $q->where('type', $request->type);
         if ($request->start_date) $q->whereDate('transacted_at', '>=', $request->start_date);
         if ($request->end_date)   $q->whereDate('transacted_at', '<=', $request->end_date);
 
-        if (! $request->boolean('include_cogs', true)) {
-            $q->where(fn ($inner) =>
-                $inner->where('type', '!=', 'expense')
-                      ->orWhere(fn ($q2) => $q2->where('type', 'expense')->where('description', 'not like', 'COGS:%'))
-            );
-        }
+        $paginated = $q->paginate(50);
+        $paginated->getCollection()->transform(function ($tx) use ($balMap) {
+            $tx->financial_balance = $balMap[$tx->id] ?? null;
+            return $tx;
+        });
 
-        return response()->json($q->paginate(50));
+        return response()->json($paginated);
     }
 
     public function summary(Request $request): JsonResponse {
