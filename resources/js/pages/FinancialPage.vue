@@ -89,10 +89,10 @@ const pieData = computed(() => {
     const s = ftSummary.value
     // Allocation: Payments, Expenses, Income Adj., Payroll (excludes raw order count)
     const items = [
-        { label: 'Payments',    value: s.payments.total,                 color: '#22c55e' },
-        { label: 'Expenses',    value: s.expenses.total,                 color: '#ef4444' },
-        { label: 'Income Adj.', value: s.income_adjustments?.total ?? 0, color: '#14b8a6' },
-        { label: 'Payroll',     value: s.payroll?.total ?? 0,            color: '#a855f7' },
+        { label: 'Payments',    value: s.payments.total,                 count: s.payments.count,                 color: '#22c55e' },
+        { label: 'Expenses',    value: s.expenses.total,                 count: s.expenses.count,                 color: '#ef4444' },
+        { label: 'Income Adj.', value: s.income_adjustments?.total ?? 0, count: s.income_adjustments?.count ?? 0, color: '#14b8a6' },
+        { label: 'Payroll',     value: s.payroll?.total ?? 0,            count: s.payroll?.count ?? 0,            color: '#a855f7' },
     ].filter(i => i.value > 0)
     const total = items.reduce((sum, i) => sum + i.value, 0)
     if (!total) return []
@@ -275,25 +275,57 @@ onMounted(async () => {
                     <!-- LEFT: Allocation donut ─────────────────────────────── -->
                     <div class="rounded-xl border bg-background p-4">
                         <h3 class="font-bold text-sm mb-4">Financial Allocation</h3>
-                        <div v-if="pieData.length > 0" class="flex items-center gap-6">
-                            <svg viewBox="0 0 180 180" style="width:148px;height:148px;flex-shrink:0">
-                                <path v-for="(slice, i) in pieData" :key="i"
-                                    :d="slice.path" :fill="slice.color"
-                                    class="transition-opacity hover:opacity-75" />
-                                <text x="90" y="82" text-anchor="middle" fill="currentColor" fill-opacity="0.4" font-size="10">Allocation</text>
-                                <text x="90" y="98" text-anchor="middle" fill="currentColor" font-size="13" font-weight="bold">{{ pieData.length }}</text>
-                                <text x="90" y="111" text-anchor="middle" fill="currentColor" fill-opacity="0.4" font-size="9">categories</text>
-                            </svg>
-                            <div class="space-y-3 flex-1 min-w-0">
-                                <div v-for="slice in pieData" :key="slice.label">
-                                    <div class="flex items-center gap-2 text-xs">
-                                        <span class="shrink-0 w-2.5 h-2.5 rounded-sm" :style="`background:${slice.color}`"></span>
-                                        <span class="text-muted-foreground flex-1 truncate">{{ slice.label }}</span>
-                                        <span class="font-bold tabular-nums shrink-0">{{ slice.pct }}%</span>
-                                    </div>
-                                    <p class="text-[11px] text-muted-foreground tabular-nums pl-4 mt-0.5">{{ fmt(slice.value) }}</p>
-                                </div>
+                        <div v-if="pieData.length > 0" class="space-y-4">
+                            <!-- Donut chart centred above the table -->
+                            <div class="flex justify-center">
+                                <svg viewBox="0 0 180 180" style="width:148px;height:148px">
+                                    <path v-for="(slice, i) in pieData" :key="i"
+                                        :d="slice.path" :fill="slice.color"
+                                        class="transition-opacity hover:opacity-75" />
+                                    <text x="90" y="82" text-anchor="middle" fill="currentColor" fill-opacity="0.4" font-size="10">Allocation</text>
+                                    <text x="90" y="98" text-anchor="middle" fill="currentColor" font-size="13" font-weight="bold">{{ pieData.length }}</text>
+                                    <text x="90" y="111" text-anchor="middle" fill="currentColor" fill-opacity="0.4" font-size="9">categories</text>
+                                </svg>
                             </div>
+                            <!-- Breakdown table -->
+                            <table class="w-full text-xs">
+                                <thead>
+                                    <tr class="border-b text-muted-foreground">
+                                        <th class="pb-1.5 text-left font-medium">Category</th>
+                                        <th class="pb-1.5 text-right font-medium">Txns</th>
+                                        <th class="pb-1.5 text-right font-medium">Amount</th>
+                                        <th class="pb-1.5 pl-3 text-left font-medium">Share</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-border">
+                                    <tr v-for="slice in pieData" :key="slice.label">
+                                        <td class="py-2">
+                                            <span class="flex items-center gap-1.5">
+                                                <span class="w-2 h-2 rounded-sm shrink-0" :style="`background:${slice.color}`"></span>
+                                                <span class="font-medium">{{ slice.label }}</span>
+                                            </span>
+                                        </td>
+                                        <td class="py-2 text-right tabular-nums text-muted-foreground">{{ slice.count }}</td>
+                                        <td class="py-2 text-right tabular-nums font-semibold">{{ fmt(slice.value) }}</td>
+                                        <td class="py-2 pl-3">
+                                            <div class="flex items-center gap-1.5">
+                                                <div class="w-14 h-1.5 rounded-full bg-muted overflow-hidden shrink-0">
+                                                    <div class="h-full rounded-full" :style="`width:${slice.pct}%;background:${slice.color}`" />
+                                                </div>
+                                                <span class="tabular-nums text-muted-foreground">{{ slice.pct }}%</span>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                                <tfoot class="border-t border-border">
+                                    <tr class="text-muted-foreground">
+                                        <td class="pt-2 font-bold text-foreground">Total</td>
+                                        <td class="pt-2 text-right tabular-nums">{{ pieData.reduce((s, i) => s + i.count, 0) }}</td>
+                                        <td class="pt-2 text-right tabular-nums font-bold text-foreground">{{ fmt(pieData.reduce((s, i) => s + i.value, 0)) }}</td>
+                                        <td class="pt-2 pl-3">100%</td>
+                                    </tr>
+                                </tfoot>
+                            </table>
                         </div>
                         <p v-else class="text-xs text-muted-foreground py-4 text-center">No allocation data for this period.</p>
                     </div>
