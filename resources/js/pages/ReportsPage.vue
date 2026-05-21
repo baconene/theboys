@@ -1109,7 +1109,7 @@ onMounted(async () => {
                         </div>
 
                         <!-- COGS -->
-                        <div class="px-5 py-4 space-y-2">
+                        <div v-if="plIncludeCogs" class="px-5 py-4 space-y-2">
                             <p class="text-xs font-bold uppercase tracking-wider text-muted-foreground">Cost of Goods Sold (COGS)</p>
                             <div v-if="!plReport.cogs.has_data" class="text-xs text-yellow-600 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-950/20 rounded-lg px-3 py-2">
                                 No cost data — set ingredient costs and product recipes to enable COGS tracking.
@@ -1197,7 +1197,7 @@ onMounted(async () => {
                         <p class="text-xs text-muted-foreground mb-1">Gross Sales</p>
                         <p class="text-xl font-black">{{ fmt(plReport.revenue.gross_sales) }}</p>
                     </div>
-                    <div class="rounded-xl border bg-card p-4 shadow-sm">
+                    <div v-if="plIncludeCogs" class="rounded-xl border bg-card p-4 shadow-sm">
                         <p class="text-xs text-muted-foreground mb-1">COGS</p>
                         <p class="text-xl font-black text-red-500">{{ fmt(plReport.cogs.total) }}</p>
                     </div>
