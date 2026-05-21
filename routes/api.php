@@ -91,6 +91,7 @@ Route::prefix('v1')->group(function () {
 
         // Parcel Tracking
         Route::get('/parcels', [\App\Http\Controllers\Api\V1\ParcelController::class, 'index']);
+        Route::get('/parcels/{parcel}', [\App\Http\Controllers\Api\V1\ParcelController::class, 'show']);
         Route::post('/parcels', [\App\Http\Controllers\Api\V1\ParcelController::class, 'store']);
         Route::put('/parcels/{parcel}', [\App\Http\Controllers\Api\V1\ParcelController::class, 'update']);
         Route::delete('/parcels/{parcel}', [\App\Http\Controllers\Api\V1\ParcelController::class, 'destroy']);

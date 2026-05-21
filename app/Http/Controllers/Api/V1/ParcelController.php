@@ -40,6 +40,11 @@ class ParcelController extends Controller
         ]);
     }
 
+    public function show(Parcel $parcel): JsonResponse
+    {
+        return response()->json(['data' => $this->format($parcel->load('items'))]);
+    }
+
     public function store(Request $request): JsonResponse
     {
         $this->checkAuth();

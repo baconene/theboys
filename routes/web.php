@@ -74,6 +74,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     // Parcel Tracking
     Route::get('parcels', [ParcelPageController::class, 'index'])
         ->name('parcels.index');
+    Route::get('parcels/{parcel}', [ParcelPageController::class, 'show'])
+        ->name('parcels.show');
 });
 
 require __DIR__.'/settings.php';
