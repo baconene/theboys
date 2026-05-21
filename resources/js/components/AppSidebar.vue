@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import { Link, usePage } from '@inertiajs/vue3'
 import {
     LayoutGrid, ShoppingCart, ChefHat, Package, BarChart3, Settings, UtensilsCrossed, Users,
-    DollarSign, CalendarDays,
+    DollarSign, CalendarDays, Archive,
 } from 'lucide-vue-next'
 import AppLogo from '@/components/AppLogo.vue'
 import NavFooter from '@/components/NavFooter.vue'
@@ -28,6 +28,10 @@ const mainNavItems = computed<NavItem[]>(() => {
 
     if (hasRole('cashier', 'admin')) {
         items.push({ title: 'Point of Sale', href: '/pos', icon: ShoppingCart })
+    }
+
+    if (hasRole('cashier', 'kitchen', 'auditor', 'admin')) {
+        items.push({ title: 'Parcels', href: '/parcels', icon: Archive })
     }
 
     if (hasRole('kitchen', 'admin')) {

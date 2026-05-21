@@ -89,6 +89,16 @@ Route::prefix('v1')->group(function () {
         Route::post('/bills/{bill}/pay', [\App\Http\Controllers\Api\V1\BillController::class, 'pay']);
         Route::post('/bills/{bill}/installments/{installment}/pay', [\App\Http\Controllers\Api\V1\BillController::class, 'payInstallment']);
 
+        // Parcel Tracking
+        Route::get('/parcels', [\App\Http\Controllers\Api\V1\ParcelController::class, 'index']);
+        Route::post('/parcels', [\App\Http\Controllers\Api\V1\ParcelController::class, 'store']);
+        Route::put('/parcels/{parcel}', [\App\Http\Controllers\Api\V1\ParcelController::class, 'update']);
+        Route::delete('/parcels/{parcel}', [\App\Http\Controllers\Api\V1\ParcelController::class, 'destroy']);
+        Route::post('/parcels/{parcel}/items', [\App\Http\Controllers\Api\V1\ParcelController::class, 'storeItem']);
+        Route::put('/parcels/{parcel}/items/{item}', [\App\Http\Controllers\Api\V1\ParcelController::class, 'updateItem']);
+        Route::delete('/parcels/{parcel}/items/{item}', [\App\Http\Controllers\Api\V1\ParcelController::class, 'destroyItem']);
+        Route::patch('/parcels/{parcel}/items/{item}/toggle', [\App\Http\Controllers\Api\V1\ParcelController::class, 'toggleItem']);
+
         // HRIS — Employees
         Route::get('/hris/employees', [HrisController::class, 'employees']);
         Route::post('/hris/employees', [HrisController::class, 'storeEmployee']);

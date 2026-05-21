@@ -13,6 +13,7 @@ use App\Http\Controllers\FinancialPageController;
 use App\Http\Controllers\BillsPageController;
 use App\Http\Controllers\OrderDetailPageController;
 use App\Http\Controllers\HrisPageController;
+use App\Http\Controllers\ParcelPageController;
 
 Route::inertia('/', 'Welcome', [
     'canRegister' => Features::enabled(Features::registration()),
@@ -69,6 +70,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('hris', [HrisPageController::class, 'index'])
         ->name('hris.index')
         ->middleware('role:admin');
+
+    // Parcel Tracking
+    Route::get('parcels', [ParcelPageController::class, 'index'])
+        ->name('parcels.index');
 });
 
 require __DIR__.'/settings.php';
