@@ -617,31 +617,66 @@ onMounted(async () => {
                 </select>
             </div>
 
-            <div v-if="billForecast" class="grid lg:grid-cols-2 gap-4 p-4">
-                <div v-for="(entries, month) in billForecast.by_month" :key="month" class="border rounded-lg p-3">
-                    <p class="text-sm font-bold mb-2">{{ monthName(parseInt(month.split('-')[1])) }} {{ month.split('-')[0] }}</p>
-                    <div class="space-y-1">
-                        <div v-for="entry in entries" :key="`${entry.bill_id}-${entry.installment_id}`" class="flex items-center justify-between text-xs">
-                            <div class="flex-1">
-                                <p class="font-medium">{{ entry.name }} {{ entry.label ? `(${entry.label})` : '' }}</p>
-                                <p class="text-muted-foreground">{{ entry.category ?? 'Uncategorized' }}</p>
-                            </div>
-                            <div class="text-right">
-                                <p class="font-semibold">{{ fmt(entry.amount) }}</p>
-                                <span :class="['text-xs px-1.5 rounded', billStatusBadge(entry.status)]">{{ entry.status }}</span>
-                            </div>
-                        </div>
-                        <div class="border-t pt-1 mt-1 flex justify-between text-xs font-bold">
-                            <span>Subtotal</span>
-                            <span>{{ fmt(entries.reduce((s, e) => s + e.amount, 0)) }}</span>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div v-if="billForecast" class="p-4 border-t bg-muted/30 flex items-center justify-between">
-                <p class="text-sm font-bold">Total Forecast ({{ forecastMonths }} months)</p>
-                <p class="text-2xl font-black text-orange-600">{{ fmt(billForecast.total_forecast) }}</p>
+            <div v-if="billForecast" class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead class="bg-muted/50 text-muted-foreground text-xs uppercase tracking-wide">
+                        <tr>
+                            <th class="px-4 py-3 text-left">Payable</th>
+                            <th class="px-4 py-3 text-left">Category</th>
+                            <th class="px-4 py-3 text-left">Type</th>
+                            <th class="px-4 py-3 text-right">Due Date</th>
+                            <th class="px-4 py-3 text-right">Amount</th>
+                            <th class="px-4 py-3 text-left">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <template v-for="(entries, month) in billForecast.by_month" :key="month">
+                            <!-- Month group header -->
+                            <tr class="border-t bg-muted/40">
+                                <td colspan="6" class="px-4 py-2 text-xs font-bold text-muted-foreground uppercase tracking-wide">
+                                    {{ monthName(parseInt((month as string).split('-')[1])) }} {{ (month as string).split('-')[0] }}
+                                    <span class="ml-2 font-semibold text-foreground normal-case text-sm">
+                                        {{ fmt((entries as any[]).reduce((s: number, e: any) => s + e.amount, 0)) }}
+                                    </span>
+                                    <span class="ml-1 font-normal normal-case text-muted-foreground">
+                                        ({{ (entries as any[]).length }} item{{ (entries as any[]).length !== 1 ? 's' : '' }})
+                                    </span>
+                                </td>
+                            </tr>
+                            <!-- Entry rows -->
+                            <tr v-for="entry in (entries as any[])" :key="`${entry.bill_id}-${entry.installment_id}`" class="border-t hover:bg-muted/10 transition-colors">
+                                <td class="px-4 py-2.5">
+                                    <p class="font-medium">{{ entry.name }}</p>
+                                    <p v-if="entry.label" class="text-xs text-muted-foreground">{{ entry.label }}</p>
+                                </td>
+                                <td class="px-4 py-2.5 text-sm text-muted-foreground">{{ entry.category ?? '—' }}</td>
+                                <td class="px-4 py-2.5">
+                                    <span :class="['px-2 py-0.5 rounded text-xs font-medium', entry.is_installment ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400' : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400']">
+                                        {{ entry.is_installment ? 'Installment' : 'Recurring' }}
+                                    </span>
+                                </td>
+                                <td class="px-4 py-2.5 text-right text-sm tabular-nums text-muted-foreground">{{ entry.due_date }}</td>
+                                <td class="px-4 py-2.5 text-right font-semibold tabular-nums">{{ fmt(entry.amount) }}</td>
+                                <td class="px-4 py-2.5">
+                                    <span :class="['px-2 py-0.5 rounded-full text-xs font-medium', billStatusBadge(entry.status)]">
+                                        {{ entry.status.replace(/_/g, ' ') }}
+                                    </span>
+                                </td>
+                            </tr>
+                        </template>
+                    </tbody>
+                    <tfoot class="border-t-2 bg-muted/30">
+                        <tr>
+                            <td colspan="4" class="px-4 py-3 text-sm font-bold">
+                                Total Forecast ({{ forecastMonths }} month{{ forecastMonths !== 1 ? 's' : '' }})
+                            </td>
+                            <td class="px-4 py-3 text-right text-xl font-black text-orange-600 tabular-nums">
+                                {{ fmt(billForecast.total_forecast) }}
+                            </td>
+                            <td></td>
+                        </tr>
+                    </tfoot>
+                </table>
             </div>
         </div>
     </div>
