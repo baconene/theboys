@@ -63,7 +63,7 @@ class ReportService
             ->get();
     }
 
-    public function getProfitLossReport(Carbon $start, Carbon $end): array
+    public function getProfitLossReport(Carbon $start, Carbon $end, bool $includeCogs = true): array
     {
         // Revenue from paid orders
         $revenue = \App\Models\Order::whereBetween('created_at', [$start->startOfDay(), $end->copy()->endOfDay()])
@@ -85,21 +85,34 @@ class ReportService
             ->where('payment_status', 'paid')
         )->sum('cost_subtotal');
 
-        $grossProfit  = $netRevenue - $cogs;
+        // Adjust COGS based on toggle: if includeCogs is false, don't deduct it from gross profit
+        $deductedCogs = $includeCogs ? $cogs : 0;
+        $grossProfit  = $netRevenue - $deductedCogs;
         $grossMargin  = $netRevenue > 0 ? round(($grossProfit / $netRevenue) * 100, 2) : 0;
 
-        // Operating expenses
-        $expenseRows = \App\Models\FinancialTransaction::where('type', 'expense')
-            ->whereBetween('transacted_at', [$start->startOfDay(), $end->copy()->endOfDay()])
-            ->selectRaw('COALESCE(SUM(amount), 0) as total, COUNT(*) as count')
+        // Operating expenses (exclude COGS entries when includeCogs is false)
+        $expenseQuery = \App\Models\FinancialTransaction::where('type', 'expense')
+            ->whereBetween('transacted_at', [$start->startOfDay(), $end->copy()->endOfDay()]);
+        
+        if (!$includeCogs) {
+            $expenseQuery->where('description', 'not like', 'COGS:%');
+        }
+        
+        $expenseRows = $expenseQuery->selectRaw('COALESCE(SUM(amount), 0) as total, COUNT(*) as count')
             ->first();
 
         $totalExpenses = (float) ($expenseRows->total ?? 0);
         $expenseCount  = (int)   ($expenseRows->count ?? 0);
 
-        // Expense breakdown
-        $expenseBreakdown = \App\Models\FinancialTransaction::where('type', 'expense')
-            ->whereBetween('transacted_at', [$start->startOfDay(), $end->copy()->endOfDay()])
+        // Expense breakdown (exclude COGS entries when includeCogs is false)
+        $expenseBreakdownQuery = \App\Models\FinancialTransaction::where('type', 'expense')
+            ->whereBetween('transacted_at', [$start->startOfDay(), $end->copy()->endOfDay()]);
+        
+        if (!$includeCogs) {
+            $expenseBreakdownQuery->where('description', 'not like', 'COGS:%');
+        }
+        
+        $expenseBreakdown = $expenseBreakdownQuery
             ->orderByDesc('transacted_at')
             ->get(['description', 'amount', 'transacted_at'])
             ->map(fn ($e) => [
@@ -186,6 +199,7 @@ class ReportService
             ],
             'net_profit' => $netProfit,
             'net_margin' => $netMargin,
+            'include_cogs' => $includeCogs,
         ];
     }
 }

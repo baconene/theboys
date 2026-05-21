@@ -64,8 +64,9 @@ class ReportController extends Controller
         $end = request()->input('end_date')
             ? Carbon::parse(request()->input('end_date'))
             : Carbon::now()->endOfMonth();
+        $includeCogs = request()->boolean('include_cogs', true);
 
-        return response()->json($this->reportService->getProfitLossReport($start, $end));
+        return response()->json($this->reportService->getProfitLossReport($start, $end, $includeCogs));
     }
 
     public function inventoryTransactions(): JsonResponse

@@ -5,8 +5,8 @@ import { toast } from 'vue-sonner'
 import api from '@/utils/api'
 import {
     BarChart3, Download, RefreshCw, TrendingUp, TrendingDown,
-    Search, ChevronLeft, ChevronRight,
-    ShoppingBag, ClipboardList, Package,
+    DollarSign, Plus, X, Search, ChevronLeft, ChevronRight,
+    ShoppingBag, ClipboardList, Package, Trash2, Pencil, CalendarDays,
 } from 'lucide-vue-next'
 
 defineOptions({
@@ -28,6 +28,21 @@ interface MonthlyReport {
 interface ProductSale {
     product_id: number; product_name: string; total_quantity: number; total_sales: number
 }
+interface FtSummary {
+    period: { start: string; end: string }
+    orders: { total: number; count: number }
+    payments: { total: number; count: number }
+    expenses: { total: number; count: number }
+    income_adjustments: { total: number; count: number }
+    payroll: { total: number; count: number }
+    net: number
+    by_tender: { tender: string; total: number; count: number }[]
+}
+interface FtTransaction {
+    id: number; type: string; amount: number; description: string; transacted_at: string
+    running_balance: number
+    user?: { name: string }; tender?: { name: string }
+}
 interface OrderRow {
     id: number; queue_number: number | null; order_type: string; status: string
     payment_status: string; table_number: string | null; notes: string | null
@@ -41,17 +56,6 @@ interface InvTransaction {
     user?: { name: string }
 }
 interface Ingredient { id: number; name: string; unit: string }
-interface PLBreakdownItem { description: string; amount: number; transacted_at: string }
-interface PL {
-    period: { start: string; end: string }
-    revenue: { order_count: number; gross_sales: number; discounts: number; net_revenue: number }
-    cogs: { total: number; has_data: boolean }
-    gross_profit: number; gross_margin: number
-    income_adjustments: { total: number; count: number; breakdown: PLBreakdownItem[] }
-    expenses: { total: number; count: number; breakdown: PLBreakdownItem[] }
-    payroll: { total: number; count: number; breakdown: PLBreakdownItem[] }
-    net_profit: number; net_margin: number
-}
 
 const props = defineProps<{
     initialDailyReport: DailyReport
@@ -59,17 +63,19 @@ const props = defineProps<{
 }>()
 
 // ── Active tab ─────────────────────────────────────────────────────────────────
-type Tab = 'orders' | 'inventory' | 'daily' | 'monthly' | 'products' | 'pl'
+type Tab = 'orders' | 'inventory' | 'financial' | 'daily' | 'monthly' | 'products' | 'pl' | 'bills'
 const tab = ref<Tab>('orders')
 const loading = ref(false)
 
 const tabs: { key: Tab; label: string }[] = [
     { key: 'orders',    label: 'Orders' },
     { key: 'inventory', label: 'Inventory' },
+    { key: 'financial', label: 'Financial' },
     { key: 'daily',     label: 'Daily Sales' },
     { key: 'monthly',   label: 'Monthly Sales' },
     { key: 'products',  label: 'Product Sales' },
     { key: 'pl',        label: 'P&L' },
+    { key: 'bills',     label: 'Bills' },
 ]
 
 // ── Daily / Monthly ────────────────────────────────────────────────────────────
@@ -106,9 +112,76 @@ const invPage = ref(1)
 const ingredients = ref<Ingredient[]>([])
 
 // ── P&L ───────────────────────────────────────────────────────────────────────
+interface PLBreakdownItem { description: string; amount: number; transacted_at: string }
+interface PL {
+    period: { start: string; end: string }
+    revenue: { order_count: number; gross_sales: number; discounts: number; net_revenue: number }
+    cogs: { total: number; has_data: boolean }
+    gross_profit: number; gross_margin: number
+    income_adjustments: { total: number; count: number; breakdown: PLBreakdownItem[] }
+    expenses: { total: number; count: number; breakdown: PLBreakdownItem[] }
+    payroll: { total: number; count: number; breakdown: PLBreakdownItem[] }
+    net_profit: number; net_margin: number
+    include_cogs?: boolean
+}
+interface BillInstallment {
+    id: number; installment_number: number; amount: number
+    due_date: string; paid_at: string | null
+    status: 'overdue' | 'due_today' | 'upcoming' | 'scheduled' | 'paid'
+}
+interface Bill {
+    id: number; name: string; description: string | null; amount: number
+    frequency: string; due_date: string; category: string | null
+    is_active: boolean; is_installment: boolean
+    installment_count: number | null; installments_paid: number | null
+    last_paid_at: string | null
+    status: 'overdue' | 'due_today' | 'upcoming' | 'scheduled' | 'inactive'
+    installments: BillInstallment[]
+}
+interface BillForecastEntry {
+    bill_id: number; installment_id: number | null; name: string; label: string | null
+    category: string | null; amount: number; due_date: string
+    frequency: string; is_installment: boolean; status: string
+}
+interface BillForecast {
+    entries: BillForecastEntry[]
+    by_month: Record<string, BillForecastEntry[]>
+    total_forecast: number; months: number
+}
+
 const plStartDate = ref(new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0])
 const plEndDate = ref(today)
+const plIncludeCogs = ref(true)
 const plReport = ref<PL | null>(null)
+
+// ── Financial ─────────────────────────────────────────────────────────────────
+const ftStartDate = ref(today)
+const ftEndDate = ref(today)
+const ftTypeFilter = ref('')
+const ftSummary = ref<FtSummary | null>(null)
+const ftTransactions = ref<FtTransaction[]>([])
+const ftMeta = ref<any>(null)
+const ftPage = ref(1)
+const showEntryForm = ref(false)
+const entryForm = ref({ type: 'expense' as 'expense' | 'income_adjustment', description: '', amount: '', notes: '', transacted_at: '' })
+const entrySaving = ref(false)
+const ftDeleting = ref<number | null>(null)
+
+// ── Bills / Payables ──────────────────────────────────────────────────────
+const bills = ref<Bill[]>([])
+const billForecast = ref<BillForecast | null>(null)
+const forecastMonths = ref(3)
+const showBillForm = ref(false)
+const editingBill = ref<Bill | null>(null)
+const billForm = ref({
+    name: '', description: '', amount: '', frequency: 'monthly',
+    due_date: '', category: '', is_installment: false, installment_count: '3',
+})
+const billSaving = ref(false)
+const billPaying = ref<number | null>(null)
+const billDeleting = ref<number | null>(null)
+const expandedBillId = ref<number | null>(null)
+const payingInstallmentId = ref<number | null>(null)
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December']
@@ -151,27 +224,51 @@ const invTypeBadge = (t: string) => ({
     purchase:   'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
 }[t] ?? 'bg-muted text-muted-foreground')
 
+const typeLabel = (t: string) => ({
+    order: 'Order', payment: 'Payment', expense: 'Expense', income_adjustment: 'Income Adj.', payroll: 'Payroll',
+}[t] ?? t)
+const typeBadgeClass = (t: string) => ({
+    order:             'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+    payment:           'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+    expense:           'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+    income_adjustment: 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400',
+    payroll:           'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
+}[t] ?? 'bg-muted text-muted-foreground')
+const isCredit = (t: string) => t === 'payment' || t === 'income_adjustment'
+
 const orderTypeBadge = (t: string) => ({ dine_in: 'Dine-In', takeout: 'Takeout', delivery: 'Delivery' }[t] ?? t)
+
+const frequencyLabel = (f: string) => ({
+    one_time: 'One Time', daily: 'Daily', weekly: 'Weekly', bi_weekly: 'Bi-Weekly',
+    monthly: 'Monthly', quarterly: 'Quarterly', semi_annual: 'Semi-Annual', annual: 'Annual',
+}[f] ?? f)
+
+const billStatusBadge = (s: string) => ({
+    overdue:   'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+    due_today: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
+    upcoming:  'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400',
+    scheduled: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+    inactive:  'bg-muted text-muted-foreground',
+}[s] ?? 'bg-muted text-muted-foreground')
+
+const billStatusLabel = (s: string) => ({
+    overdue: 'Overdue', due_today: 'Due Today', upcoming: 'Due Soon',
+    scheduled: 'Scheduled', inactive: 'Inactive',
+}[s] ?? s)
+
+const monthlySummary = computed(() => {
+    const multiplier: Record<string, number> = {
+        one_time: 0, daily: 30, weekly: 4.33, bi_weekly: 2.17,
+        monthly: 1, quarterly: 1/3, semi_annual: 1/6, annual: 1/12,
+    }
+    return bills.value.filter(b => b.is_active).reduce((sum, b) => sum + b.amount * (multiplier[b.frequency] ?? 0), 0)
+})
+const overdueBills = computed(() => bills.value.filter(b => b.status === 'overdue'))
+const dueSoonBills = computed(() => bills.value.filter(b => b.status === 'due_today' || b.status === 'upcoming'))
 
 const topProducts = computed(() =>
     [...productSales.value].sort((a, b) => b.total_sales - a.total_sales).slice(0, 10)
 )
-
-// P&L chart data: bar widths as % of max absolute value
-const plChartData = computed(() => {
-    if (!plReport.value) return null
-    const p = plReport.value
-    const items = [
-        { label: 'Net Revenue',  value: p.revenue.net_revenue,           color: 'bg-green-500' },
-        { label: 'COGS',         value: p.cogs.total,                    color: 'bg-orange-500' },
-        { label: 'Gross Profit', value: p.gross_profit,                  color: p.gross_profit >= 0 ? 'bg-blue-500' : 'bg-red-500' },
-        { label: 'Expenses',     value: p.expenses.total,                color: 'bg-red-400' },
-        { label: 'Payroll',      value: p.payroll?.total ?? 0,           color: 'bg-purple-500' },
-        { label: 'Net Profit',   value: p.net_profit,                    color: p.net_profit >= 0 ? 'bg-emerald-500' : 'bg-red-600' },
-    ]
-    const maxVal = Math.max(...items.map(i => Math.abs(i.value)), 1)
-    return items.map(i => ({ ...i, pct: Math.round((Math.abs(i.value) / maxVal) * 100) }))
-})
 
 // ── Data loading ──────────────────────────────────────────────────────────────
 const loadOrders = async (page = 1) => {
@@ -208,9 +305,29 @@ const loadInventory = async (page = 1) => {
     invMeta.value = res.data.meta ?? null
 }
 
+const loadFinancial = async (page = 1) => {
+    ftPage.value = page
+    const [summaryRes, listRes] = await Promise.all([
+        api.get('/api/v1/financial-transactions/summary', {
+            params: { start_date: ftStartDate.value, end_date: ftEndDate.value },
+        }),
+        api.get('/api/v1/financial-transactions', {
+            params: {
+                page,
+                start_date: ftStartDate.value,
+                end_date: ftEndDate.value,
+                type: ftTypeFilter.value || undefined,
+            },
+        }),
+    ])
+    ftSummary.value = summaryRes.data
+    ftTransactions.value = listRes.data.data ?? listRes.data
+    ftMeta.value = listRes.data.meta ?? null
+}
+
 const loadPL = async () => {
     const res = await api.get('/api/v1/reports/profit-loss', {
-        params: { start_date: plStartDate.value, end_date: plEndDate.value },
+        params: { start_date: plStartDate.value, end_date: plEndDate.value, include_cogs: plIncludeCogs.value },
     })
     plReport.value = res.data
 }
@@ -235,11 +352,164 @@ const generateReport = async () => {
             productSales.value = res.data
         } else if (tab.value === 'inventory') {
             await loadInventory(1)
+        } else if (tab.value === 'financial') {
+            await loadFinancial()
+        } else if (tab.value === 'bills') {
+            await loadBills()
+            await loadForecast()
         }
     } catch (err: any) {
         toast.error(err.response?.data?.message ?? 'Failed to load report')
     } finally {
         loading.value = false
+    }
+}
+
+const deleteEntry = async (tx: FtTransaction) => {
+    if (!confirm(`Delete "${tx.description}"? This cannot be undone.`)) return
+    ftDeleting.value = tx.id
+    try {
+        await api.delete(`/api/v1/financial-transactions/${tx.id}`)
+        toast.success('Entry deleted.')
+        await loadFinancial(ftPage.value)
+    } catch (err: any) {
+        toast.error(err.response?.data?.message ?? 'Failed to delete entry.')
+    } finally {
+        ftDeleting.value = null
+    }
+}
+
+const saveEntry = async () => {
+    if (!entryForm.value.description.trim() || !entryForm.value.amount) return
+    entrySaving.value = true
+    try {
+        await api.post('/api/v1/financial-transactions', {
+            type: entryForm.value.type,
+            amount: parseFloat(entryForm.value.amount),
+            description: entryForm.value.description,
+            notes: entryForm.value.notes || null,
+            transacted_at: entryForm.value.transacted_at || null,
+        })
+        const label = entryForm.value.type === 'income_adjustment' ? 'Income adjustment' : 'Expense'
+        toast.success(`${label} recorded.`)
+        entryForm.value = { type: 'expense', description: '', amount: '', notes: '', transacted_at: '' }
+        showEntryForm.value = false
+        await loadFinancial()
+    } catch (err: any) {
+        toast.error(err.response?.data?.message ?? 'Failed to save entry.')
+    } finally {
+        entrySaving.value = false
+    }
+}
+
+// ── Bills actions ─────────────────────────────────────────────────────────────
+const loadBills = async () => {
+    const res = await api.get('/api/v1/bills')
+    bills.value = res.data.data ?? []
+}
+
+const loadForecast = async () => {
+    const res = await api.get('/api/v1/bills/forecast', { params: { months: forecastMonths.value } })
+    billForecast.value = res.data
+}
+
+const openBillForm = (bill?: Bill) => {
+    if (bill) {
+        editingBill.value = bill
+        billForm.value = {
+            name: bill.name, description: bill.description ?? '',
+            amount: String(bill.amount), frequency: bill.frequency,
+            due_date: bill.due_date, category: bill.category ?? '',
+            is_installment: bill.is_installment,
+            installment_count: String(bill.installment_count ?? 3),
+        }
+    } else {
+        editingBill.value = null
+        billForm.value = {
+            name: '', description: '', amount: '', frequency: 'monthly',
+            due_date: '', category: '', is_installment: false, installment_count: '3',
+        }
+    }
+    showBillForm.value = true
+}
+
+const closeBillForm = () => { showBillForm.value = false; editingBill.value = null }
+
+const saveBill = async () => {
+    if (!billForm.value.name.trim() || !billForm.value.amount || !billForm.value.due_date) return
+    billSaving.value = true
+    try {
+        const payload: Record<string, any> = {
+            name: billForm.value.name,
+            description: billForm.value.description || null,
+            amount: parseFloat(billForm.value.amount),
+            frequency: billForm.value.frequency,
+            due_date: billForm.value.due_date,
+            category: billForm.value.category || null,
+        }
+        if (!editingBill.value) {
+            payload.is_installment = billForm.value.is_installment
+            if (billForm.value.is_installment) {
+                payload.installment_count = parseInt(billForm.value.installment_count)
+            }
+        }
+        if (editingBill.value) {
+            await api.put(`/api/v1/bills/${editingBill.value.id}`, payload)
+            toast.success('Bill updated.')
+        } else {
+            await api.post('/api/v1/bills', payload)
+            toast.success('Bill added.')
+        }
+        closeBillForm()
+        await loadBills(); await loadForecast()
+    } catch (err: any) {
+        toast.error(err.response?.data?.message ?? 'Failed to save bill.')
+    } finally {
+        billSaving.value = false
+    }
+}
+
+const payBill = async (bill: Bill) => {
+    if (!confirm(`Mark "${bill.name}" as paid?\n\nAmount: ${fmt(bill.amount)}\nThis records an expense and advances the due date.`)) return
+    billPaying.value = bill.id
+    try {
+        await api.post(`/api/v1/bills/${bill.id}/pay`)
+        toast.success('Bill marked as paid.')
+        await loadBills(); await loadForecast()
+    } catch (err: any) {
+        toast.error(err.response?.data?.message ?? 'Failed to mark as paid.')
+    } finally {
+        billPaying.value = null
+    }
+}
+
+const payInstallment = async (bill: Bill, inst: BillInstallment) => {
+    if (!confirm(`Pay installment #${inst.installment_number} of "${bill.name}"?\n\nAmount: ${fmt(inst.amount)}\nDue: ${inst.due_date}`)) return
+    payingInstallmentId.value = inst.id
+    try {
+        const res = await api.post(`/api/v1/bills/${bill.id}/installments/${inst.id}/pay`)
+        const idx = bills.value.findIndex(b => b.id === bill.id)
+        if (idx !== -1) bills.value[idx] = res.data.data
+        await loadForecast()
+        toast.success(`Installment #${inst.installment_number} paid.`)
+    } catch (err: any) {
+        toast.error(err.response?.data?.message ?? 'Failed to pay installment.')
+    } finally {
+        payingInstallmentId.value = null
+    }
+}
+
+const deleteBill = async (bill: Bill) => {
+    if (!confirm(`Delete "${bill.name}"? This cannot be undone.`)) return
+    billDeleting.value = bill.id
+    try {
+        await api.delete(`/api/v1/bills/${bill.id}`)
+        toast.success('Bill deleted.')
+        await loadBills(); await loadForecast()
+    } catch (err: any) {
+        toast.error(err.response?.data?.message ?? 'Failed to delete bill.')
+    } finally {
+        billDeleting.value = null
     }
 }
 
@@ -271,6 +541,15 @@ const exportCSV = () => {
     } else if (tab.value === 'products') {
         filename = `product-sales`
         rows = [['Product', 'Qty Sold', 'Total Sales'], ...productSales.value.map((p) => [p.product_name, String(p.total_quantity), String(p.total_sales)])]
+    } else if (tab.value === 'financial' && ftTransactions.value.length > 0) {
+        filename = `financial-transactions-${ftStartDate.value}-to-${ftEndDate.value}`
+        rows = [
+            ['Date', 'Type', 'Description', 'Tender', 'Amount', 'User'],
+            ...ftTransactions.value.map((t) => [
+                t.transacted_at?.slice(0, 10) ?? '', t.type, t.description,
+                t.tender?.name ?? '', String(t.amount), t.user?.name ?? '',
+            ]),
+        ]
     }
 
     if (rows.length === 0) { toast.info('No data to export'); return }
@@ -291,6 +570,7 @@ const switchTab = (t: Tab) => {
 }
 
 onMounted(async () => {
+    // Pre-load ingredient list for the inventory filter dropdown
     try {
         const res = await api.get('/api/v1/inventory')
         ingredients.value = (res.data.data ?? res.data).map((i: any) => ({ id: i.id, name: i.name, unit: i.unit }))
@@ -406,6 +686,40 @@ onMounted(async () => {
                         <input v-model="plStartDate" type="date" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
                     <div><label class="text-xs font-medium text-muted-foreground block mb-1">To</label>
                         <input v-model="plEndDate" type="date" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
+                    <div class="flex items-center gap-2">
+                        <input v-model="plIncludeCogs" type="checkbox" id="pl_cogs_toggle" class="rounded border-gray-300" />
+                        <label for="pl_cogs_toggle" class="text-xs font-medium text-muted-foreground">Include COGS in expenses</label>
+                    </div>
+                </template>
+
+                <!-- Bills forecast months -->
+                <template v-if="tab === 'bills'">
+                    <div><label class="text-xs font-medium text-muted-foreground block mb-1">Forecast Period</label>
+                        <select v-model.number="forecastMonths" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
+                            <option :value="1">1 month</option>
+                            <option :value="2">2 months</option>
+                            <option :value="3">3 months</option>
+                            <option :value="6">6 months</option>
+                            <option :value="12">12 months</option>
+                        </select>
+                    </div>
+                </template>
+
+                <!-- Financial date range -->
+                <template v-if="tab === 'financial'">
+                    <div><label class="text-xs font-medium text-muted-foreground block mb-1">From</label>
+                        <input v-model="ftStartDate" type="date" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
+                    <div><label class="text-xs font-medium text-muted-foreground block mb-1">To</label>
+                        <input v-model="ftEndDate" type="date" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
+                    <div><label class="text-xs font-medium text-muted-foreground block mb-1">Type</label>
+                        <select v-model="ftTypeFilter" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
+                            <option value="">All Types</option>
+                            <option value="order">Orders</option>
+                            <option value="payment">Payments</option>
+                            <option value="expense">Expenses</option>
+                            <option value="income_adjustment">Income Adjustments</option>
+                            <option value="payroll">Payroll</option>
+                        </select></div>
                 </template>
 
                 <button @click="generateReport" :disabled="loading"
@@ -579,45 +893,197 @@ onMounted(async () => {
             </div>
         </template>
 
+        <!-- ── Financial ──────────────────────────────────────────────────────── -->
+        <template v-if="tab === 'financial'">
+            <div v-if="ftSummary" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+                <div class="rounded-xl border bg-card p-4 shadow-sm">
+                    <p class="text-xs text-muted-foreground mb-1 flex items-center gap-1"><BarChart3 class="h-3 w-3" /> Orders</p>
+                    <p class="text-2xl font-black">{{ ftSummary.orders.count }}</p>
+                    <p class="text-sm font-semibold text-blue-600 mt-0.5">{{ fmt(ftSummary.orders.total) }}</p>
+                </div>
+                <div class="rounded-xl border bg-card p-4 shadow-sm">
+                    <p class="text-xs text-muted-foreground mb-1 flex items-center gap-1"><TrendingUp class="h-3 w-3" /> Payments</p>
+                    <p class="text-2xl font-black">{{ ftSummary.payments.count }}</p>
+                    <p class="text-sm font-semibold text-green-600 mt-0.5">{{ fmt(ftSummary.payments.total) }}</p>
+                </div>
+                <div class="rounded-xl border bg-card p-4 shadow-sm">
+                    <p class="text-xs text-muted-foreground mb-1 flex items-center gap-1"><TrendingDown class="h-3 w-3" /> Expenses</p>
+                    <p class="text-2xl font-black">{{ ftSummary.expenses.count }}</p>
+                    <p class="text-sm font-semibold text-red-600 mt-0.5">{{ fmt(ftSummary.expenses.total) }}</p>
+                </div>
+                <div class="rounded-xl border bg-card p-4 shadow-sm">
+                    <p class="text-xs text-muted-foreground mb-1 flex items-center gap-1"><TrendingUp class="h-3 w-3 text-teal-500" /> Income Adj.</p>
+                    <p class="text-2xl font-black">{{ ftSummary.income_adjustments?.count ?? 0 }}</p>
+                    <p class="text-sm font-semibold text-teal-600 mt-0.5">{{ fmt(ftSummary.income_adjustments?.total ?? 0) }}</p>
+                </div>
+                <div class="rounded-xl border bg-card p-4 shadow-sm">
+                    <p class="text-xs text-muted-foreground mb-1 flex items-center gap-1"><TrendingDown class="h-3 w-3 text-purple-500" /> Payroll</p>
+                    <p class="text-2xl font-black">{{ ftSummary.payroll?.count ?? 0 }}</p>
+                    <p class="text-sm font-semibold text-purple-600 mt-0.5">{{ fmt(ftSummary.payroll?.total ?? 0) }}</p>
+                </div>
+                <div :class="['rounded-xl border p-4 shadow-sm', ftSummary.net >= 0 ? 'bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800' : 'bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-800']">
+                    <p class="text-xs text-muted-foreground mb-1 flex items-center gap-1"><DollarSign class="h-3 w-3" /> Net Cash</p>
+                    <p class="text-2xl font-black" :class="ftSummary.net >= 0 ? 'text-green-700 dark:text-green-400' : 'text-red-600'">{{ fmt(ftSummary.net) }}</p>
+                    <p class="text-xs text-muted-foreground mt-0.5">Payments + Adj. − Expenses − Payroll</p>
+                </div>
+            </div>
+
+            <div v-if="ftSummary && ftSummary.by_tender.length > 0" class="rounded-xl border bg-card shadow-sm p-4">
+                <h3 class="font-bold text-sm mb-3">Payments by Tender</h3>
+                <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    <div v-for="row in ftSummary.by_tender" :key="row.tender" class="flex items-center justify-between rounded-lg bg-muted/40 px-4 py-3">
+                        <div>
+                            <p class="text-sm font-semibold">{{ row.tender }}</p>
+                            <p class="text-xs text-muted-foreground">{{ row.count }} transaction{{ row.count !== 1 ? 's' : '' }}</p>
+                        </div>
+                        <p class="text-base font-bold text-green-600">{{ fmt(row.total) }}</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex items-center justify-between">
+                <h3 class="font-bold text-sm text-muted-foreground uppercase tracking-wider">Transaction Log</h3>
+                <button @click="showEntryForm = !showEntryForm" class="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium hover:bg-muted transition">
+                    <Plus v-if="!showEntryForm" class="h-3.5 w-3.5" />
+                    <X v-else class="h-3.5 w-3.5" />
+                    {{ showEntryForm ? 'Cancel' : 'Add Entry' }}
+                </button>
+            </div>
+
+            <div v-if="showEntryForm" class="rounded-xl border bg-card shadow-sm p-4">
+                <!-- Type selector -->
+                <div class="flex gap-2 mb-4">
+                    <button
+                        @click="entryForm.type = 'expense'"
+                        :class="[
+                            'flex-1 rounded-lg border-2 py-2 text-sm font-semibold transition',
+                            entryForm.type === 'expense'
+                                ? 'border-red-500 bg-red-50 text-red-700 dark:bg-red-950/20 dark:text-red-400'
+                                : 'border-border text-muted-foreground hover:bg-muted',
+                        ]"
+                    >
+                        Expense / Debit
+                    </button>
+                    <button
+                        @click="entryForm.type = 'income_adjustment'"
+                        :class="[
+                            'flex-1 rounded-lg border-2 py-2 text-sm font-semibold transition',
+                            entryForm.type === 'income_adjustment'
+                                ? 'border-teal-500 bg-teal-50 text-teal-700 dark:bg-teal-950/20 dark:text-teal-400'
+                                : 'border-border text-muted-foreground hover:bg-muted',
+                        ]"
+                    >
+                        Income Adjustment / Credit
+                    </button>
+                </div>
+                <div class="grid sm:grid-cols-4 gap-3">
+                    <div class="sm:col-span-2">
+                        <label class="text-xs font-medium text-muted-foreground block mb-1">Description *</label>
+                        <input v-model="entryForm.description" type="text"
+                            :placeholder="entryForm.type === 'expense' ? 'e.g. Charcoal supply, LPG refill' : 'e.g. Supplier rebate, cash correction'"
+                            class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                    </div>
+                    <div>
+                        <label class="text-xs font-medium text-muted-foreground block mb-1">Amount (₱) *</label>
+                        <input v-model="entryForm.amount" type="number" min="0.01" step="0.01" placeholder="0.00"
+                            class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                    </div>
+                    <div>
+                        <label class="text-xs font-medium text-muted-foreground block mb-1">Date (optional)</label>
+                        <input v-model="entryForm.transacted_at" type="date"
+                            class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                    </div>
+                    <div class="sm:col-span-3">
+                        <label class="text-xs font-medium text-muted-foreground block mb-1">Notes (optional)</label>
+                        <input v-model="entryForm.notes" type="text" placeholder="Additional details"
+                            class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                    </div>
+                    <div class="flex items-end">
+                        <button
+                            @click="saveEntry"
+                            :disabled="entrySaving || !entryForm.description.trim() || !entryForm.amount"
+                            :class="[
+                                'w-full rounded-lg px-4 py-2 text-sm font-bold text-white disabled:opacity-50 transition',
+                                entryForm.type === 'expense' ? 'bg-red-600 hover:bg-red-700' : 'bg-teal-600 hover:bg-teal-700',
+                            ]"
+                        >
+                            {{ entrySaving ? 'Saving…' : (entryForm.type === 'expense' ? 'Save Expense' : 'Save Credit') }}
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div v-if="ftTransactions.length > 0" class="rounded-xl border bg-card shadow-sm overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead class="bg-muted/50 text-muted-foreground text-xs uppercase tracking-wide">
+                            <tr>
+                                <th class="px-4 py-3 text-left">Date</th>
+                                <th class="px-4 py-3 text-left">Type</th>
+                                <th class="px-4 py-3 text-left">Description</th>
+                                <th class="px-4 py-3 text-left">Tender</th>
+                                <th class="px-4 py-3 text-right">Amount</th>
+                                <th class="px-4 py-3 text-right">Balance</th>
+                                <th class="px-4 py-3 text-left">By</th>
+                                <th class="px-4 py-3"></th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y">
+                            <tr v-for="tx in ftTransactions" :key="tx.id" class="hover:bg-muted/20">
+                                <td class="px-4 py-2 text-muted-foreground whitespace-nowrap">{{ fmtDatetime(tx.transacted_at) }}</td>
+                                <td class="px-4 py-2"><span :class="['rounded-full px-2 py-0.5 text-xs font-semibold', typeBadgeClass(tx.type)]">{{ typeLabel(tx.type) }}</span></td>
+                                <td class="px-4 py-2 max-w-xs truncate">{{ tx.description }}</td>
+                                <td class="px-4 py-2 text-muted-foreground">{{ tx.tender?.name ?? '—' }}</td>
+                                <td class="px-4 py-2 text-right font-bold" :class="isCredit(tx.type) ? 'text-green-600' : 'text-red-600'">
+                                    {{ isCredit(tx.type) ? '+' : '-' }}{{ fmt(tx.amount) }}
+                                </td>
+                                <td class="px-4 py-2 text-right font-semibold" :class="tx.running_balance >= 0 ? 'text-foreground' : 'text-red-600'">
+                                    {{ fmt(tx.running_balance) }}
+                                </td>
+                                <td class="px-4 py-2 text-muted-foreground text-xs">{{ tx.user?.name ?? '—' }}</td>
+                                <td class="px-4 py-2 text-center">
+                                    <button
+                                        v-if="tx.type === 'expense' || tx.type === 'income_adjustment'"
+                                        @click="deleteEntry(tx)"
+                                        :disabled="ftDeleting === tx.id"
+                                        class="rounded p-1 text-muted-foreground hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 disabled:opacity-40 transition"
+                                        title="Delete entry"
+                                    >
+                                        <Trash2 class="h-3.5 w-3.5" />
+                                    </button>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div v-if="ftMeta" class="flex items-center justify-between px-4 py-3 border-t text-xs text-muted-foreground">
+                    <span>Page {{ ftMeta.current_page }} of {{ ftMeta.last_page }} &mdash; {{ ftMeta.total }} transactions</span>
+                    <div class="flex items-center gap-1">
+                        <button
+                            @click="loadFinancial(ftPage - 1)"
+                            :disabled="ftPage <= 1"
+                            class="rounded px-2 py-1 border hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed"
+                        ><ChevronLeft class="h-3 w-3" /></button>
+                        <span class="px-2">{{ ftPage }}</span>
+                        <button
+                            @click="loadFinancial(ftPage + 1)"
+                            :disabled="ftPage >= ftMeta.last_page"
+                            class="rounded px-2 py-1 border hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed"
+                        ><ChevronRight class="h-3 w-3" /></button>
+                    </div>
+                </div>
+            </div>
+            <div v-else-if="!loading" class="rounded-xl border bg-card p-10 text-center shadow-sm text-muted-foreground text-sm">
+                Select a date range and click <strong>Generate</strong> to load financial records.
+            </div>
+        </template>
+
         <!-- ── Profit & Loss ─────────────────────────────────────────────────── -->
         <template v-if="tab === 'pl'">
             <div v-if="plReport" class="space-y-4">
                 <p class="text-sm text-muted-foreground">
                     Period: <strong>{{ plReport.period.start }}</strong> to <strong>{{ plReport.period.end }}</strong>
                 </p>
-
-                <!-- P&L Visual Bar Chart -->
-                <div class="rounded-xl border bg-card shadow-sm p-5">
-                    <h3 class="font-bold text-sm mb-4 flex items-center gap-2"><BarChart3 class="h-4 w-4" /> P&L Breakdown</h3>
-                    <div v-if="plChartData" class="space-y-3">
-                        <div v-for="item in plChartData" :key="item.label" class="flex items-center gap-3">
-                            <div class="w-28 shrink-0 text-xs font-medium text-right text-muted-foreground">{{ item.label }}</div>
-                            <div class="flex-1 h-7 bg-muted/40 rounded-lg overflow-hidden">
-                                <div
-                                    :class="['h-full rounded-lg transition-all duration-500', item.color]"
-                                    :style="{ width: item.pct + '%' }"
-                                />
-                            </div>
-                            <div class="w-28 shrink-0 text-xs font-bold text-right" :class="item.value >= 0 ? 'text-foreground' : 'text-red-600'">
-                                {{ item.value < 0 ? '−' : '' }}{{ fmt(Math.abs(item.value)) }}
-                            </div>
-                        </div>
-                    </div>
-                    <div class="mt-4 pt-4 border-t flex flex-wrap gap-6 text-xs">
-                        <div>
-                            <span class="text-muted-foreground">Gross Margin: </span>
-                            <span class="font-bold" :class="plReport.gross_margin >= 0 ? 'text-blue-600' : 'text-red-600'">{{ plReport.gross_margin }}%</span>
-                        </div>
-                        <div>
-                            <span class="text-muted-foreground">Net Margin: </span>
-                            <span class="font-bold" :class="plReport.net_margin >= 0 ? 'text-emerald-600' : 'text-red-600'">{{ plReport.net_margin }}%</span>
-                        </div>
-                        <div>
-                            <span class="text-muted-foreground">Orders: </span>
-                            <span class="font-bold">{{ plReport.revenue.order_count }}</span>
-                        </div>
-                    </div>
-                </div>
 
                 <!-- P&L Statement -->
                 <div class="rounded-xl border bg-card shadow-sm overflow-hidden">
@@ -658,7 +1124,7 @@ onMounted(async () => {
                             </div>
                         </div>
 
-                        <!-- Other Income -->
+                        <!-- Other Income (income adjustments) -->
                         <div v-if="(plReport.income_adjustments?.total ?? 0) > 0" class="px-5 py-4 space-y-2">
                             <p class="text-xs font-bold uppercase tracking-wider text-muted-foreground">Other Income / Credit Adjustments ({{ plReport.income_adjustments.count }})</p>
                             <div class="space-y-1">
@@ -755,6 +1221,229 @@ onMounted(async () => {
             </div>
             <div v-else-if="!loading" class="rounded-xl border bg-card p-10 text-center shadow-sm text-muted-foreground text-sm">
                 Select a date range and click <strong>Generate</strong> to load the P&amp;L statement.
+            </div>
+        </template>
+
+        <!-- ── Bills / Payables ─────────────────────────────────────────────── -->
+        <template v-if="tab === 'bills'">
+            <!-- Summary cards -->
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <div class="rounded-xl border bg-card p-4 shadow-sm">
+                    <p class="text-xs text-muted-foreground mb-1 flex items-center gap-1"><CalendarDays class="h-3 w-3" /> Monthly Exposure</p>
+                    <p class="text-xl font-black text-orange-600">{{ fmt(monthlySummary) }}</p>
+                    <p class="text-xs text-muted-foreground mt-0.5">est. per month</p>
+                </div>
+                <div class="rounded-xl border bg-card p-4 shadow-sm">
+                    <p class="text-xs text-muted-foreground mb-1">Annual Exposure</p>
+                    <p class="text-xl font-black">{{ fmt(monthlySummary * 12) }}</p>
+                    <p class="text-xs text-muted-foreground mt-0.5">est. per year</p>
+                </div>
+                <div :class="['rounded-xl border p-4 shadow-sm', overdueBills.length > 0 ? 'bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-800' : 'bg-card']">
+                    <p class="text-xs text-muted-foreground mb-1">Overdue</p>
+                    <p class="text-3xl font-black" :class="overdueBills.length > 0 ? 'text-red-600' : ''">{{ overdueBills.length }}</p>
+                </div>
+                <div :class="['rounded-xl border p-4 shadow-sm', dueSoonBills.length > 0 ? 'bg-yellow-50 dark:bg-yellow-950/20 border-yellow-200 dark:border-yellow-800' : 'bg-card']">
+                    <p class="text-xs text-muted-foreground mb-1">Due Soon</p>
+                    <p class="text-3xl font-black" :class="dueSoonBills.length > 0 ? 'text-yellow-600' : ''">{{ dueSoonBills.length }}</p>
+                </div>
+            </div>
+
+            <!-- Bills list -->
+            <div class="rounded-xl border bg-card shadow-sm overflow-hidden">
+                <div class="p-4 border-b flex items-center justify-between">
+                    <h2 class="font-bold text-sm flex items-center gap-2"><CalendarDays class="h-4 w-4" /> Payables</h2>
+                    <button @click="openBillForm()" class="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-sm font-bold text-primary-foreground hover:bg-primary/90">
+                        <Plus class="h-3.5 w-3.5" /> Add Bill
+                    </button>
+                </div>
+
+                <!-- Add / Edit form -->
+                <div v-if="showBillForm" class="border-b bg-muted/20 p-4">
+                    <p class="text-sm font-bold mb-3">{{ editingBill ? 'Edit Bill' : 'New Payable' }}</p>
+
+                    <!-- Payment plan toggle (new bills only) -->
+                    <div v-if="!editingBill" class="flex gap-2 mb-4">
+                        <button @click="billForm.is_installment = false"
+                            :class="['flex-1 rounded-lg border-2 py-2 text-sm font-semibold transition',
+                                !billForm.is_installment ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:bg-muted']">
+                            Recurring Bill
+                        </button>
+                        <button @click="billForm.is_installment = true"
+                            :class="['flex-1 rounded-lg border-2 py-2 text-sm font-semibold transition',
+                                billForm.is_installment ? 'border-orange-500 bg-orange-50 text-orange-700 dark:bg-orange-950/20 dark:text-orange-400' : 'border-border text-muted-foreground hover:bg-muted']">
+                            Payment Plan (Installments)
+                        </button>
+                    </div>
+
+                    <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                        <div>
+                            <label class="text-xs font-medium text-muted-foreground block mb-1">Name *</label>
+                            <input v-model="billForm.name" type="text" placeholder="e.g. Shopee Subscription"
+                                class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                        </div>
+                        <div>
+                            <label class="text-xs font-medium text-muted-foreground block mb-1">
+                                {{ billForm.is_installment ? 'Total Amount (₱) *' : 'Amount (₱) *' }}
+                            </label>
+                            <input v-model="billForm.amount" type="number" min="0.01" step="0.01" placeholder="0.00"
+                                class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                        </div>
+                        <div>
+                            <label class="text-xs font-medium text-muted-foreground block mb-1">
+                                {{ billForm.is_installment ? 'Interval Between Payments *' : 'Frequency *' }}
+                            </label>
+                            <select v-model="billForm.frequency" class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
+                                <option v-if="!billForm.is_installment" value="one_time">One Time</option>
+                                <option value="daily">Daily</option>
+                                <option value="weekly">Weekly</option>
+                                <option value="bi_weekly">Bi-Weekly</option>
+                                <option value="monthly">Monthly</option>
+                                <option value="quarterly">Quarterly</option>
+                                <option value="semi_annual">Semi-Annual</option>
+                                <option value="annual">Annual</option>
+                            </select>
+                        </div>
+                        <!-- Installment count: only for new payment-plan bills -->
+                        <div v-if="billForm.is_installment && !editingBill">
+                            <label class="text-xs font-medium text-muted-foreground block mb-1">Number of Installments *</label>
+                            <input v-model="billForm.installment_count" type="number" min="2" max="360" placeholder="e.g. 3"
+                                class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                            <p v-if="billForm.amount && billForm.installment_count" class="text-xs text-muted-foreground mt-1">
+                                ≈ {{ fmt(parseFloat(billForm.amount || '0') / parseInt(billForm.installment_count || '1')) }} / installment
+                            </p>
+                        </div>
+                        <div>
+                            <label class="text-xs font-medium text-muted-foreground block mb-1">
+                                {{ billForm.is_installment ? 'First Payment Date *' : 'Next Due Date *' }}
+                            </label>
+                            <input v-model="billForm.due_date" type="date"
+                                class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                        </div>
+                        <div>
+                            <label class="text-xs font-medium text-muted-foreground block mb-1">Category</label>
+                            <input v-model="billForm.category" type="text" placeholder="e.g. Subscription, Utilities"
+                                list="bill-categories"
+                                class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                            <datalist id="bill-categories">
+                                <option value="Subscription" /><option value="Utilities" /><option value="Rent" />
+                                <option value="Platform Fee" /><option value="Loan" /><option value="Insurance" />
+                                <option value="Maintenance" /><option value="Tax" />
+                            </datalist>
+                        </div>
+                        <div>
+                            <label class="text-xs font-medium text-muted-foreground block mb-1">Notes</label>
+                            <input v-model="billForm.description" type="text" placeholder="Optional details"
+                                class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                        </div>
+                    </div>
+                    <div class="flex gap-2 mt-3">
+                        <button @click="saveBill" :disabled="billSaving || !billForm.name.trim() || !billForm.amount || !billForm.due_date"
+                            class="rounded-lg bg-primary px-4 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+                            {{ billSaving ? 'Saving…' : (editingBill ? 'Update' : (billForm.is_installment ? 'Create Payment Plan' : 'Add Bill')) }}
+                        </button>
+                        <button @click="closeBillForm" class="rounded-lg border px-4 py-2 text-sm font-medium hover:bg-muted">Cancel</button>
+                    </div>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead class="bg-muted/50 text-muted-foreground text-xs uppercase tracking-wide">
+                            <tr>
+                                <th class="px-4 py-3 text-left">Bill / Payable</th>
+                                <th class="px-4 py-3 text-left">Category</th>
+                                <th class="px-4 py-3 text-right">Amount</th>
+                                <th class="px-4 py-3 text-left">Frequency</th>
+                                <th class="px-4 py-3 text-left">Next Due</th>
+                                <th class="px-4 py-3 text-left">Status</th>
+                                <th class="px-4 py-3 text-left">Last Paid</th>
+                                <th class="px-4 py-3 text-center">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y">
+                            <tr v-for="bill in bills" :key="bill.id" :class="['hover:bg-muted/20', !bill.is_active ? 'opacity-50' : '']">
+                                <td class="px-4 py-3">
+                                    <p class="font-semibold">{{ bill.name }}</p>
+                                    <p v-if="bill.description" class="text-xs text-muted-foreground truncate max-w-[200px]">{{ bill.description }}</p>
+                                </td>
+                                <td class="px-4 py-3">
+                                    <span v-if="bill.category" class="rounded-full bg-muted px-2 py-0.5 text-xs font-medium">{{ bill.category }}</span>
+                                    <span v-else class="text-muted-foreground">—</span>
+                                </td>
+                                <td class="px-4 py-3 text-right font-bold">{{ fmt(bill.amount) }}</td>
+                                <td class="px-4 py-3 text-muted-foreground text-xs">{{ frequencyLabel(bill.frequency) }}</td>
+                                <td class="px-4 py-3 font-medium">{{ bill.due_date }}</td>
+                                <td class="px-4 py-3">
+                                    <span :class="['rounded-full px-2 py-0.5 text-xs font-semibold', billStatusBadge(bill.status)]">
+                                        {{ billStatusLabel(bill.status) }}
+                                    </span>
+                                </td>
+                                <td class="px-4 py-3 text-xs text-muted-foreground">{{ bill.last_paid_at ? fmtDatetime(bill.last_paid_at) : '—' }}</td>
+                                <td class="px-4 py-3">
+                                    <div class="flex items-center gap-1 justify-center">
+                                        <button v-if="bill.is_active" @click="payBill(bill)" :disabled="billPaying === bill.id"
+                                            class="rounded px-2.5 py-1 text-xs font-bold bg-green-600 text-white hover:bg-green-700 disabled:opacity-40 transition">
+                                            {{ billPaying === bill.id ? '…' : 'Pay' }}
+                                        </button>
+                                        <button @click="openBillForm(bill)"
+                                            class="rounded p-1 text-muted-foreground hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/30 transition">
+                                            <Pencil class="h-3.5 w-3.5" />
+                                        </button>
+                                        <button @click="deleteBill(bill)" :disabled="billDeleting === bill.id"
+                                            class="rounded p-1 text-muted-foreground hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 disabled:opacity-40 transition">
+                                            <Trash2 class="h-3.5 w-3.5" />
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                            <tr v-if="bills.length === 0 && !loading">
+                                <td colspan="8" class="px-4 py-10 text-center text-muted-foreground">
+                                    No bills tracked yet. Click <strong>Add Bill</strong> to start tracking payables.
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Forecast -->
+            <div v-if="billForecast && billForecast.entries.length > 0" class="rounded-xl border bg-card shadow-sm overflow-hidden">
+                <div class="p-4 border-b flex items-center justify-between">
+                    <h2 class="font-bold text-sm flex items-center gap-2">
+                        <TrendingDown class="h-4 w-4 text-orange-500" />
+                        Payment Forecast — Next {{ billForecast.months }} month{{ billForecast.months > 1 ? 's' : '' }}
+                    </h2>
+                    <p class="text-sm font-bold">Total: <span class="text-orange-600">{{ fmt(billForecast.total_forecast) }}</span></p>
+                </div>
+                <div class="p-4 grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <div v-for="(entries, month) in billForecast.by_month" :key="month" class="rounded-xl border overflow-hidden">
+                        <div class="px-4 py-2.5 bg-muted/40 border-b flex items-center justify-between">
+                            <p class="text-sm font-bold">
+                                {{ new Date(String(month) + '-02').toLocaleDateString('en-PH', { month: 'long', year: 'numeric' }) }}
+                            </p>
+                            <p class="text-sm font-bold text-orange-600">
+                                {{ fmt((entries as BillForecastEntry[]).reduce((s, e) => s + e.amount, 0)) }}
+                            </p>
+                        </div>
+                        <div class="divide-y">
+                            <div v-for="entry in (entries as BillForecastEntry[])" :key="entry.bill_id + entry.due_date"
+                                class="px-4 py-2.5 flex items-center justify-between gap-3">
+                                <div class="min-w-0">
+                                    <p class="text-sm font-medium truncate">{{ entry.name }}</p>
+                                    <p class="text-xs text-muted-foreground">Due {{ entry.due_date }}</p>
+                                </div>
+                                <div class="text-right shrink-0">
+                                    <p class="text-sm font-bold">{{ fmt(entry.amount) }}</p>
+                                    <span :class="['rounded-full px-1.5 py-0.5 text-xs font-semibold', billStatusBadge(entry.status)]">
+                                        {{ billStatusLabel(entry.status) }}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div v-else-if="!loading && tab === 'bills' && bills.length === 0" class="rounded-xl border bg-card p-8 text-center shadow-sm text-muted-foreground text-sm">
+                Add bills above and click <strong>Generate</strong> to see the payment forecast.
             </div>
         </template>
 
