@@ -92,6 +92,39 @@ class ReportController extends Controller
         return response()->json($query->paginate(50));
     }
 
+    public function dailyChart(): JsonResponse
+    {
+        $this->checkPermission();
+
+        $days  = min(max((int) request()->input('days', 7), 1), 90);
+        $end   = Carbon::today()->endOfDay();
+        $start = Carbon::today()->subDays($days - 1)->startOfDay();
+
+        $rows = \App\Models\FinancialTransaction::selectRaw(
+            "DATE(transacted_at) as date,
+             SUM(CASE WHEN type IN ('payment','income_adjustment') THEN amount ELSE 0 END) as income,
+             SUM(CASE WHEN type IN ('expense','payroll')           THEN amount ELSE 0 END) as expense"
+        )
+            ->where('type', '!=', 'order')
+            ->whereBetween('transacted_at', [$start, $end])
+            ->groupByRaw('DATE(transacted_at)')
+            ->orderByRaw('DATE(transacted_at)')
+            ->get()
+            ->keyBy('date');
+
+        $result = [];
+        for ($i = $days - 1; $i >= 0; $i--) {
+            $date     = Carbon::today()->subDays($i)->toDateString();
+            $result[] = [
+                'date'    => $date,
+                'income'  => round((float) ($rows[$date]?->income  ?? 0), 2),
+                'expense' => round((float) ($rows[$date]?->expense ?? 0), 2),
+            ];
+        }
+
+        return response()->json($result);
+    }
+
     private function checkPermission(): void
     {
         if (! auth()->user()?->hasAnyRole('admin') && ! auth()->user()?->hasPermissionTo('view reports')) {

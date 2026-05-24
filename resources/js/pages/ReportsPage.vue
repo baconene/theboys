@@ -154,6 +154,12 @@ const plEndDate = ref(today)
 const plIncludeCogs = ref(true)
 const plReport = ref<PL | null>(null)
 
+// ── Daily chart ────────────────────────────────────────────────────────────────
+interface ChartDay { date: string; income: number; expense: number }
+const chartDays    = ref(7)
+const chartData    = ref<ChartDay[]>([])
+const chartLoading = ref(false)
+
 // ── Financial ─────────────────────────────────────────────────────────────────
 const ftStartDate = ref(thirtyDaysAgo)
 const ftEndDate = ref(today)
@@ -189,6 +195,12 @@ const monthName = (n: number) => monthNames[n - 1] ?? ''
 
 const fmt = (v: number | string | null | undefined) =>
     '₱' + parseFloat(String(v ?? 0)).toLocaleString('en-PH', { minimumFractionDigits: 2 })
+
+const fmtShort = (v: number) => {
+    if (v >= 1_000_000) return '₱' + (v / 1_000_000).toFixed(1) + 'M'
+    if (v >= 1_000) return '₱' + (v / 1_000).toFixed(1) + 'K'
+    return '₱' + Math.round(v)
+}
 
 const itemCount = (items: any) =>
     Array.isArray(items) ? items.length : (items?.data?.length ?? 0)
@@ -270,6 +282,46 @@ const topProducts = computed(() =>
     [...productSales.value].sort((a, b) => b.total_sales - a.total_sales).slice(0, 10)
 )
 
+const chartTotals = computed(() => {
+    const income = chartData.value.reduce((s, d) => s + d.income, 0)
+    const expense = chartData.value.reduce((s, d) => s + d.expense, 0)
+    return { income, expense, net: income - expense }
+})
+
+const chartBars = computed(() => {
+    const W = 800, H = 280, padL = 60, padR = 16, padT = 20, padB = 48
+    const chartH = H - padT - padB
+    const baselineY = padT + chartH
+    const data = chartData.value
+
+    const maxVal = data.length ? Math.max(...data.map(d => Math.max(d.income, d.expense)), 1) : 1
+    const exp = Math.pow(10, Math.floor(Math.log10(maxVal)))
+    const niceMax = Math.ceil(maxVal / exp) * exp
+
+    const ticks = [0, 1, 2, 3, 4].map(i => ({
+        y: padT + chartH - (i / 4) * chartH,
+        label: fmtShort((niceMax * i) / 4),
+    }))
+
+    const dayW = data.length ? (W - padL - padR) / data.length : 1
+    const barW = Math.max(2, Math.min(16, dayW * 0.34))
+    const showEvery = data.length <= 14 ? 1 : data.length <= 30 ? 3 : data.length <= 60 ? 7 : 14
+
+    const bars = data.map((d, i) => {
+        const cx = padL + (i + 0.5) * dayW
+        const incomeH = Math.max(0, (d.income / niceMax) * chartH)
+        const expenseH = Math.max(0, (d.expense / niceMax) * chartH)
+        return {
+            incomeX: cx - barW - 1, incomeY: baselineY - incomeH, incomeH,
+            expenseX: cx + 1, expenseY: baselineY - expenseH, expenseH,
+            barW, labelX: cx, labelY: baselineY + 14,
+            label: new Date(d.date + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }),
+            showLabel: i % showEvery === 0 || i === data.length - 1,
+        }
+    })
+    return { bars, ticks, baselineY, padL }
+})
+
 // ── Data loading ──────────────────────────────────────────────────────────────
 const loadOrders = async (page = 1) => {
     ordPage.value = page
@@ -330,6 +382,18 @@ const loadPL = async () => {
         params: { start_date: plStartDate.value, end_date: plEndDate.value, include_cogs: plIncludeCogs.value },
     })
     plReport.value = res.data
+}
+
+const loadChartData = async () => {
+    chartLoading.value = true
+    try {
+        const res = await api.get('/api/v1/reports/daily-chart', { params: { days: chartDays.value } })
+        chartData.value = res.data
+    } catch (err: any) {
+        toast.error(err.response?.data?.message ?? 'Failed to load chart data')
+    } finally {
+        chartLoading.value = false
+    }
 }
 
 const generateReport = async () => {
@@ -575,7 +639,7 @@ onMounted(async () => {
         const res = await api.get('/api/v1/inventory')
         ingredients.value = (res.data.data ?? res.data).map((i: any) => ({ id: i.id, name: i.name, unit: i.unit }))
     } catch { /* non-critical */ }
-    await generateReport()
+    await Promise.all([loadChartData(), generateReport()])
 })
 </script>
 
@@ -583,6 +647,86 @@ onMounted(async () => {
     <Head title="Reports" />
 
     <div class="space-y-5">
+        <!-- ── Daily Income vs Expense Chart ───────────────────────────────────── -->
+        <div class="rounded-xl border bg-card shadow-sm overflow-hidden">
+            <div class="p-4 border-b flex flex-wrap items-center justify-between gap-3">
+                <h2 class="font-bold text-sm flex items-center gap-2">
+                    <BarChart3 class="h-4 w-4 text-primary" /> Daily Income vs Expense
+                </h2>
+                <div class="flex items-center gap-1">
+                    <span class="text-xs text-muted-foreground mr-1">Last:</span>
+                    <button
+                        v-for="d in [7, 14, 30, 60, 90]" :key="d"
+                        @click="chartDays = d; loadChartData()"
+                        :class="[
+                            'rounded-lg px-2.5 py-1 text-xs font-semibold transition',
+                            chartDays === d
+                                ? 'bg-primary text-primary-foreground'
+                                : 'border hover:bg-muted text-muted-foreground',
+                        ]"
+                    >{{ d }}d</button>
+                </div>
+            </div>
+
+            <div v-if="chartData.length > 0" class="grid grid-cols-3 divide-x border-b text-center">
+                <div class="px-4 py-2.5">
+                    <p class="text-xs text-muted-foreground">Total Income</p>
+                    <p class="text-sm font-bold text-green-600">{{ fmt(chartTotals.income) }}</p>
+                </div>
+                <div class="px-4 py-2.5">
+                    <p class="text-xs text-muted-foreground">Total Expense</p>
+                    <p class="text-sm font-bold text-red-500">{{ fmt(chartTotals.expense) }}</p>
+                </div>
+                <div class="px-4 py-2.5">
+                    <p class="text-xs text-muted-foreground">Net</p>
+                    <p class="text-sm font-bold" :class="chartTotals.net >= 0 ? 'text-green-600' : 'text-red-500'">{{ fmt(chartTotals.net) }}</p>
+                </div>
+            </div>
+
+            <div class="px-2 pt-4 pb-2">
+                <div v-if="chartLoading" class="flex items-center justify-center h-44 text-muted-foreground text-sm">
+                    <RefreshCw class="h-4 w-4 animate-spin mr-2" /> Loading chart…
+                </div>
+                <div v-else-if="chartData.length === 0" class="flex items-center justify-center h-44 text-muted-foreground text-sm">
+                    No financial data for this period.
+                </div>
+                <svg v-else viewBox="0 0 800 280" class="w-full" preserveAspectRatio="xMidYMid meet">
+                    <template v-for="tick in chartBars.ticks" :key="tick.label">
+                        <line :x1="chartBars.padL" :y1="tick.y" x2="784" :y2="tick.y"
+                            stroke="currentColor" stroke-opacity="0.08" stroke-width="1" />
+                        <text :x="chartBars.padL - 6" :y="tick.y + 4"
+                            text-anchor="end" fill="currentColor" opacity="0.45" font-size="10">{{ tick.label }}</text>
+                    </template>
+
+                    <template v-for="bar in chartBars.bars" :key="bar.labelX">
+                        <rect v-if="bar.incomeH > 0"
+                            :x="bar.incomeX" :y="bar.incomeY" :width="bar.barW" :height="bar.incomeH"
+                            fill="#22c55e" opacity="0.8" rx="1.5" />
+                        <rect v-if="bar.expenseH > 0"
+                            :x="bar.expenseX" :y="bar.expenseY" :width="bar.barW" :height="bar.expenseH"
+                            fill="#ef4444" opacity="0.8" rx="1.5" />
+                        <text v-if="bar.showLabel"
+                            :x="bar.labelX" :y="bar.labelY"
+                            text-anchor="middle" fill="currentColor" opacity="0.45" font-size="9">{{ bar.label }}</text>
+                    </template>
+
+                    <line :x1="chartBars.padL" :y1="chartBars.baselineY" x2="784" :y2="chartBars.baselineY"
+                        stroke="currentColor" stroke-opacity="0.2" stroke-width="1" />
+                </svg>
+
+                <div class="flex items-center justify-center gap-6 mt-1 pb-1">
+                    <div class="flex items-center gap-1.5">
+                        <div class="w-3 h-3 rounded-sm" style="background:#22c55e;opacity:0.8"></div>
+                        <span class="text-xs text-muted-foreground">Income</span>
+                    </div>
+                    <div class="flex items-center gap-1.5">
+                        <div class="w-3 h-3 rounded-sm" style="background:#ef4444;opacity:0.8"></div>
+                        <span class="text-xs text-muted-foreground">Expense</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Tab bar -->
         <div class="flex flex-wrap gap-1 rounded-xl border bg-card p-1.5 shadow-sm">
             <button
