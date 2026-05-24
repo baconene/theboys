@@ -12,6 +12,7 @@ use App\Models\OrderItem;
 use App\Models\Product;
 use App\Repositories\OrderRepository;
 use App\Services\OrderService;
+use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -32,15 +33,17 @@ class OrderController extends Controller
             ->when($request->status, fn($q) => $q->where('status', $request->status))
             ->when($request->payment_status, fn($q) => $q->where('payment_status', $request->payment_status))
             ->when($request->exclude_cancelled, fn($q) => $q->where('status', '!=', 'cancelled'))
-            ->when($request->date_from, fn($q) => $q->whereDate('created_at', '>=', $request->date_from))
-            ->when($request->date_to, fn($q) => $q->whereDate('created_at', '<=', $request->date_to))
+            ->when($request->date_from, fn($q) => $q->where('created_at', '>=',
+                Carbon::parse($request->date_from, 'Asia/Manila')->startOfDay()->utc()))
+            ->when($request->date_to, fn($q) => $q->where('created_at', '<=',
+                Carbon::parse($request->date_to, 'Asia/Manila')->endOfDay()->utc()))
             ->when($request->search, fn($q) => $q->where(function ($q) use ($request) {
                 $q->where('id', $request->search)
                   ->orWhere('notes', 'like', "%{$request->search}%")
                   ->orWhere('table_number', 'like', "%{$request->search}%");
             }))
             ->orderByDesc('created_at')
-            ->paginate(20);
+            ->paginate(min((int) $request->input('per_page', 20), 100));
 
         return response()->json(OrderResource::collection($orders));
     }

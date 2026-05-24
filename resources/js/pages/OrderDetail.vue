@@ -103,27 +103,27 @@ const reprintReceipt = async () => {
 <template>
     <Head :title="`Order #${order.id}`" />
 
-    <div class="max-w-3xl mx-auto space-y-5">
+    <div class="max-w-3xl mx-auto space-y-4 px-0 sm:px-0">
 
         <!-- Back + Header -->
-        <div class="flex items-center gap-3">
+        <div class="flex items-center gap-2 sm:gap-3">
             <button @click="router.history.back()"
                 class="rounded-lg border p-2 hover:bg-muted text-muted-foreground shrink-0">
                 <ArrowLeft class="h-4 w-4" />
             </button>
             <div class="flex-1 min-w-0">
-                <div class="flex items-center gap-2 flex-wrap">
-                    <h1 class="text-xl font-black flex items-center gap-2">
-                        <ShoppingBag class="h-5 w-5 text-primary shrink-0" />
+                <div class="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                    <h1 class="text-lg sm:text-xl font-black flex items-center gap-1.5">
+                        <ShoppingBag class="h-4 w-4 sm:h-5 sm:w-5 text-primary shrink-0" />
                         Order #{{ order.id }}
                     </h1>
-                    <span v-if="order.queue_number" class="rounded-full bg-muted px-2.5 py-0.5 text-xs font-semibold">
+                    <span v-if="order.queue_number" class="rounded-full bg-muted px-2 py-0.5 text-xs font-semibold">
                         Q{{ order.queue_number }}
                     </span>
-                    <span :class="['rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize', statusColor(order.status)]">
+                    <span :class="['rounded-full px-2 py-0.5 text-xs font-semibold capitalize', statusColor(order.status)]">
                         {{ order.status }}
                     </span>
-                    <span :class="['rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize', payColor(order.payment_status)]">
+                    <span :class="['rounded-full px-2 py-0.5 text-xs font-semibold capitalize', payColor(order.payment_status)]">
                         {{ order.payment_status }}
                     </span>
                 </div>
@@ -133,15 +133,21 @@ const reprintReceipt = async () => {
                     <template v-if="order.created_by"> · by {{ order.created_by }}</template>
                 </p>
             </div>
+            <!-- Desktop: text + icon; Mobile: icon only (footer button handles mobile) -->
             <button @click="reprintReceipt" :disabled="printing"
-                class="flex items-center gap-2 rounded-lg border bg-card px-4 py-2 text-sm font-semibold hover:bg-muted disabled:opacity-50 shrink-0 transition-colors">
+                class="hidden sm:flex items-center gap-2 rounded-lg border bg-card px-4 py-2 text-sm font-semibold hover:bg-muted disabled:opacity-50 shrink-0 transition-colors">
                 <Printer class="h-4 w-4" />
                 {{ printing ? 'Printing…' : 'Reprint Receipt' }}
+            </button>
+            <button @click="reprintReceipt" :disabled="printing"
+                class="sm:hidden rounded-lg border bg-card p-2 hover:bg-muted disabled:opacity-50 shrink-0 transition-colors"
+                title="Reprint Receipt">
+                <Printer class="h-4 w-4" />
             </button>
         </div>
 
         <!-- Timeline + Customer -->
-        <div class="grid sm:grid-cols-2 gap-4">
+        <div class="grid sm:grid-cols-2 gap-3 sm:gap-4">
             <div class="rounded-xl border bg-card shadow-sm p-4 space-y-3">
                 <h3 class="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
                     <Clock class="h-3.5 w-3.5" /> Timeline
@@ -213,7 +219,7 @@ const reprintReceipt = async () => {
                 <h2 class="font-bold text-sm">Items ({{ order.items.length }})</h2>
             </div>
             <div class="overflow-x-auto">
-                <table class="w-full text-sm">
+                <table class="w-full text-sm min-w-[500px]">
                     <thead class="bg-muted/50 text-muted-foreground text-xs uppercase tracking-wide">
                         <tr>
                             <th class="px-4 py-3 text-left">Product</th>
@@ -251,7 +257,7 @@ const reprintReceipt = async () => {
         </div>
 
         <!-- Totals + Payments -->
-        <div class="grid sm:grid-cols-2 gap-4">
+        <div class="grid sm:grid-cols-2 gap-3 sm:gap-4">
             <div class="rounded-xl border bg-card shadow-sm p-4 space-y-2">
                 <h3 class="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
                     <Receipt class="h-3.5 w-3.5" /> Totals
@@ -317,7 +323,7 @@ const reprintReceipt = async () => {
             <p class="text-sm">{{ order.notes }}</p>
         </div>
 
-        <!-- Reprint footer button (mobile-friendly duplicate) -->
+        <!-- Reprint footer button -->
         <div class="flex justify-center pb-4">
             <button @click="reprintReceipt" :disabled="printing"
                 class="flex items-center gap-2 rounded-xl bg-primary px-6 py-2.5 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors">
