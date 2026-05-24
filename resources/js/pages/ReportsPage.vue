@@ -79,6 +79,7 @@ const tabs: { key: Tab; label: string }[] = [
 
 // ── Daily / Monthly ────────────────────────────────────────────────────────────
 const today = new Date().toISOString().split('T')[0]
+const thirtyDaysAgo = new Date(Date.now() - 30 * 86400_000).toISOString().split('T')[0]
 const selectedDate = ref(today)
 const selectedYear = ref(new Date().getFullYear())
 const selectedMonth = ref(new Date().getMonth() + 1)
@@ -92,7 +93,7 @@ const prodDateTo = ref(today)
 
 // ── Orders ─────────────────────────────────────────────────────────────────────
 const ordSearch = ref('')
-const ordDateFrom = ref(today)
+const ordDateFrom = ref(thirtyDaysAgo)
 const ordDateTo = ref(today)
 const ordStatus = ref('')
 const ordPayment = ref('')
@@ -101,7 +102,7 @@ const ordersMeta = ref<any>(null)
 const ordPage = ref(1)
 
 // ── Inventory transactions ─────────────────────────────────────────────────────
-const invDateFrom = ref(today)
+const invDateFrom = ref(thirtyDaysAgo)
 const invDateTo = ref(today)
 const invType = ref('')
 const invIngredientId = ref('')
@@ -154,7 +155,7 @@ const plIncludeCogs = ref(true)
 const plReport = ref<PL | null>(null)
 
 // ── Financial ─────────────────────────────────────────────────────────────────
-const ftStartDate = ref(today)
+const ftStartDate = ref(thirtyDaysAgo)
 const ftEndDate = ref(today)
 const ftTypeFilter = ref('')
 const ftSummary = ref<FtSummary | null>(null)
