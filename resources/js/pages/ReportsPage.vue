@@ -30,7 +30,6 @@ interface ProductSale {
 }
 interface FtSummary {
     period: { start: string; end: string }
-    orders: { total: number; count: number }
     payments: { total: number; count: number }
     expenses: { total: number; count: number }
     income_adjustments: { total: number; count: number }
@@ -321,8 +320,8 @@ const loadFinancial = async (page = 1) => {
         }),
     ])
     ftSummary.value = summaryRes.data
-    ftTransactions.value = listRes.data.data ?? listRes.data
-    ftMeta.value = listRes.data.meta ?? null
+    ftTransactions.value = listRes.data.data ?? []
+    ftMeta.value = listRes.data
 }
 
 const loadPL = async () => {
@@ -895,12 +894,7 @@ onMounted(async () => {
 
         <!-- ── Financial ──────────────────────────────────────────────────────── -->
         <template v-if="tab === 'financial'">
-            <div v-if="ftSummary" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
-                <div class="rounded-xl border bg-card p-4 shadow-sm">
-                    <p class="text-xs text-muted-foreground mb-1 flex items-center gap-1"><BarChart3 class="h-3 w-3" /> Orders</p>
-                    <p class="text-2xl font-black">{{ ftSummary.orders.count }}</p>
-                    <p class="text-sm font-semibold text-blue-600 mt-0.5">{{ fmt(ftSummary.orders.total) }}</p>
-                </div>
+            <div v-if="ftSummary" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
                 <div class="rounded-xl border bg-card p-4 shadow-sm">
                     <p class="text-xs text-muted-foreground mb-1 flex items-center gap-1"><TrendingUp class="h-3 w-3" /> Payments</p>
                     <p class="text-2xl font-black">{{ ftSummary.payments.count }}</p>
