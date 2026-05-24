@@ -92,6 +92,38 @@ class ReportController extends Controller
         return response()->json($query->paginate(50));
     }
 
+    public function monthlyChart(): JsonResponse
+    {
+        $this->checkPermission();
+
+        $year = (int) request()->input('year', Carbon::now()->year);
+
+        $rows = \App\Models\FinancialTransaction::selectRaw(
+            "DATE_FORMAT(transacted_at, '%Y-%m') as month,
+             SUM(CASE WHEN type IN ('payment','income_adjustment') THEN amount ELSE 0 END) as income,
+             SUM(CASE WHEN type IN ('expense','payroll')           THEN amount ELSE 0 END) as expense"
+        )
+            ->where('type', '!=', 'order')
+            ->whereYear('transacted_at', $year)
+            ->groupByRaw("DATE_FORMAT(transacted_at, '%Y-%m')")
+            ->orderByRaw("DATE_FORMAT(transacted_at, '%Y-%m')")
+            ->get()
+            ->keyBy('month');
+
+        $currentMonth = Carbon::now()->year === $year ? Carbon::now()->month : 12;
+        $result = [];
+        for ($m = 1; $m <= $currentMonth; $m++) {
+            $key      = sprintf('%d-%02d', $year, $m);
+            $result[] = [
+                'month'   => $key,
+                'income'  => round((float) ($rows[$key]?->income  ?? 0), 2),
+                'expense' => round((float) ($rows[$key]?->expense ?? 0), 2),
+            ];
+        }
+
+        return response()->json($result);
+    }
+
     public function dailyChart(): JsonResponse
     {
         $this->checkPermission();

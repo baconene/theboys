@@ -5,7 +5,7 @@ import { toast } from 'vue-sonner'
 import api from '@/utils/api'
 import {
     BarChart3, Download, RefreshCw, TrendingUp, TrendingDown,
-    DollarSign, Plus, X, Search, ChevronLeft, ChevronRight,
+    DollarSign, Plus, X, Search, ChevronLeft, ChevronRight, ChevronDown,
     ShoppingBag, ClipboardList, Package, Trash2, Pencil, CalendarDays,
 } from 'lucide-vue-next'
 
@@ -156,9 +156,16 @@ const plReport = ref<PL | null>(null)
 
 // ── Daily chart ────────────────────────────────────────────────────────────────
 interface ChartDay { date: string; income: number; expense: number }
-const chartDays    = ref(7)
-const chartData    = ref<ChartDay[]>([])
-const chartLoading = ref(false)
+const chartDays      = ref(7)
+const chartData      = ref<ChartDay[]>([])
+const chartLoading   = ref(false)
+const chartCollapsed = ref(false)
+
+// ── Monthly chart ──────────────────────────────────────────────────────────────
+interface MonthChartEntry { month: string; income: number; expense: number }
+const monthChartData      = ref<MonthChartEntry[]>([])
+const monthChartLoading   = ref(false)
+const monthChartCollapsed = ref(false)
 
 // ── Financial ─────────────────────────────────────────────────────────────────
 const ftStartDate = ref(thirtyDaysAgo)
@@ -322,6 +329,45 @@ const chartBars = computed(() => {
     return { bars, ticks, baselineY, padL }
 })
 
+const monthChartTotals = computed(() => {
+    const income = monthChartData.value.reduce((s, d) => s + d.income, 0)
+    const expense = monthChartData.value.reduce((s, d) => s + d.expense, 0)
+    return { income, expense, net: income - expense }
+})
+
+const monthChartBars = computed(() => {
+    const W = 800, H = 280, padL = 60, padR = 16, padT = 20, padB = 48
+    const chartH = H - padT - padB
+    const baselineY = padT + chartH
+    const data = monthChartData.value
+
+    const maxVal = data.length ? Math.max(...data.map(d => Math.max(d.income, d.expense)), 1) : 1
+    const exp = Math.pow(10, Math.floor(Math.log10(maxVal)))
+    const niceMax = Math.ceil(maxVal / exp) * exp
+
+    const ticks = [0, 1, 2, 3, 4].map(i => ({
+        y: padT + chartH - (i / 4) * chartH,
+        label: fmtShort((niceMax * i) / 4),
+    }))
+
+    const dayW = data.length ? (W - padL - padR) / data.length : 1
+    const barW = Math.max(4, Math.min(28, dayW * 0.38))
+
+    const bars = data.map((d, i) => {
+        const cx = padL + (i + 0.5) * dayW
+        const incomeH = Math.max(0, (d.income / niceMax) * chartH)
+        const expenseH = Math.max(0, (d.expense / niceMax) * chartH)
+        return {
+            incomeX: cx - barW - 1, incomeY: baselineY - incomeH, incomeH,
+            expenseX: cx + 1, expenseY: baselineY - expenseH, expenseH,
+            barW, labelX: cx, labelY: baselineY + 14,
+            label: new Date(d.month + '-02').toLocaleDateString('en-PH', { month: 'short' }),
+            showLabel: true,
+        }
+    })
+    return { bars, ticks, baselineY, padL }
+})
+
 // ── Data loading ──────────────────────────────────────────────────────────────
 const loadOrders = async (page = 1) => {
     ordPage.value = page
@@ -396,6 +442,18 @@ const loadChartData = async () => {
     }
 }
 
+const loadMonthlyChartData = async () => {
+    monthChartLoading.value = true
+    try {
+        const res = await api.get('/api/v1/reports/monthly-chart', { params: { year: selectedYear.value } })
+        monthChartData.value = res.data
+    } catch (err: any) {
+        toast.error(err.response?.data?.message ?? 'Failed to load monthly chart data')
+    } finally {
+        monthChartLoading.value = false
+    }
+}
+
 const generateReport = async () => {
     loading.value = true
     try {
@@ -404,10 +462,16 @@ const generateReport = async () => {
         } else if (tab.value === 'pl') {
             await loadPL()
         } else if (tab.value === 'daily') {
-            const res = await api.get('/api/v1/reports/daily-sales', { params: { date: selectedDate.value } })
-            dailyReport.value = res.data
+            const [salesRes] = await Promise.all([
+                api.get('/api/v1/reports/daily-sales', { params: { date: selectedDate.value } }),
+                loadChartData(),
+            ])
+            dailyReport.value = salesRes.data
         } else if (tab.value === 'monthly') {
-            const res = await api.get('/api/v1/reports/monthly-sales', { params: { year: selectedYear.value, month: selectedMonth.value } })
+            const [res] = await Promise.all([
+                api.get('/api/v1/reports/monthly-sales', { params: { year: selectedYear.value, month: selectedMonth.value } }),
+                loadMonthlyChartData(),
+            ])
             monthlyReport.value = res.data
         } else if (tab.value === 'products') {
             const res = await api.get('/api/v1/reports/product-sales', {
@@ -639,7 +703,7 @@ onMounted(async () => {
         const res = await api.get('/api/v1/inventory')
         ingredients.value = (res.data.data ?? res.data).map((i: any) => ({ id: i.id, name: i.name, unit: i.unit }))
     } catch { /* non-critical */ }
-    await Promise.all([loadChartData(), generateReport()])
+    await generateReport()
 })
 </script>
 
@@ -647,86 +711,6 @@ onMounted(async () => {
     <Head title="Reports" />
 
     <div class="space-y-5">
-        <!-- ── Daily Income vs Expense Chart ───────────────────────────────────── -->
-        <div class="rounded-xl border bg-card shadow-sm overflow-hidden">
-            <div class="p-4 border-b flex flex-wrap items-center justify-between gap-3">
-                <h2 class="font-bold text-sm flex items-center gap-2">
-                    <BarChart3 class="h-4 w-4 text-primary" /> Daily Income vs Expense
-                </h2>
-                <div class="flex items-center gap-1">
-                    <span class="text-xs text-muted-foreground mr-1">Last:</span>
-                    <button
-                        v-for="d in [7, 14, 30, 60, 90]" :key="d"
-                        @click="chartDays = d; loadChartData()"
-                        :class="[
-                            'rounded-lg px-2.5 py-1 text-xs font-semibold transition',
-                            chartDays === d
-                                ? 'bg-primary text-primary-foreground'
-                                : 'border hover:bg-muted text-muted-foreground',
-                        ]"
-                    >{{ d }}d</button>
-                </div>
-            </div>
-
-            <div v-if="chartData.length > 0" class="grid grid-cols-3 divide-x border-b text-center">
-                <div class="px-4 py-2.5">
-                    <p class="text-xs text-muted-foreground">Total Income</p>
-                    <p class="text-sm font-bold text-green-600">{{ fmt(chartTotals.income) }}</p>
-                </div>
-                <div class="px-4 py-2.5">
-                    <p class="text-xs text-muted-foreground">Total Expense</p>
-                    <p class="text-sm font-bold text-red-500">{{ fmt(chartTotals.expense) }}</p>
-                </div>
-                <div class="px-4 py-2.5">
-                    <p class="text-xs text-muted-foreground">Net</p>
-                    <p class="text-sm font-bold" :class="chartTotals.net >= 0 ? 'text-green-600' : 'text-red-500'">{{ fmt(chartTotals.net) }}</p>
-                </div>
-            </div>
-
-            <div class="px-2 pt-4 pb-2">
-                <div v-if="chartLoading" class="flex items-center justify-center h-44 text-muted-foreground text-sm">
-                    <RefreshCw class="h-4 w-4 animate-spin mr-2" /> Loading chart…
-                </div>
-                <div v-else-if="chartData.length === 0" class="flex items-center justify-center h-44 text-muted-foreground text-sm">
-                    No financial data for this period.
-                </div>
-                <svg v-else viewBox="0 0 800 280" class="w-full" preserveAspectRatio="xMidYMid meet">
-                    <template v-for="tick in chartBars.ticks" :key="tick.label">
-                        <line :x1="chartBars.padL" :y1="tick.y" x2="784" :y2="tick.y"
-                            stroke="currentColor" stroke-opacity="0.08" stroke-width="1" />
-                        <text :x="chartBars.padL - 6" :y="tick.y + 4"
-                            text-anchor="end" fill="currentColor" opacity="0.45" font-size="10">{{ tick.label }}</text>
-                    </template>
-
-                    <template v-for="bar in chartBars.bars" :key="bar.labelX">
-                        <rect v-if="bar.incomeH > 0"
-                            :x="bar.incomeX" :y="bar.incomeY" :width="bar.barW" :height="bar.incomeH"
-                            fill="#22c55e" opacity="0.8" rx="1.5" />
-                        <rect v-if="bar.expenseH > 0"
-                            :x="bar.expenseX" :y="bar.expenseY" :width="bar.barW" :height="bar.expenseH"
-                            fill="#ef4444" opacity="0.8" rx="1.5" />
-                        <text v-if="bar.showLabel"
-                            :x="bar.labelX" :y="bar.labelY"
-                            text-anchor="middle" fill="currentColor" opacity="0.45" font-size="9">{{ bar.label }}</text>
-                    </template>
-
-                    <line :x1="chartBars.padL" :y1="chartBars.baselineY" x2="784" :y2="chartBars.baselineY"
-                        stroke="currentColor" stroke-opacity="0.2" stroke-width="1" />
-                </svg>
-
-                <div class="flex items-center justify-center gap-6 mt-1 pb-1">
-                    <div class="flex items-center gap-1.5">
-                        <div class="w-3 h-3 rounded-sm" style="background:#22c55e;opacity:0.8"></div>
-                        <span class="text-xs text-muted-foreground">Income</span>
-                    </div>
-                    <div class="flex items-center gap-1.5">
-                        <div class="w-3 h-3 rounded-sm" style="background:#ef4444;opacity:0.8"></div>
-                        <span class="text-xs text-muted-foreground">Expense</span>
-                    </div>
-                </div>
-            </div>
-        </div>
-
         <!-- Tab bar -->
         <div class="flex flex-wrap gap-1 rounded-xl border bg-card p-1.5 shadow-sm">
             <button
@@ -1587,9 +1571,93 @@ onMounted(async () => {
         </template>
 
         <!-- ── Daily Sales ────────────────────────────────────────────────────── -->
-        <template v-if="tab === 'daily' && dailyReport">
-            <div class="rounded-xl border bg-card p-4 shadow-sm">
-                <h2 class="font-bold text-base mb-4">Daily Sales — {{ dailyReport.date }}</h2>
+        <template v-if="tab === 'daily'">
+            <!-- Daily income vs expense chart -->
+            <div class="rounded-xl border bg-card shadow-sm overflow-hidden">
+                <div class="p-3 sm:p-4 border-b flex flex-wrap items-center justify-between gap-2 cursor-pointer select-none"
+                    @click="chartCollapsed = !chartCollapsed">
+                    <h2 class="font-bold text-sm flex items-center gap-2">
+                        <BarChart3 class="h-4 w-4 text-primary" /> Daily Income vs Expense
+                    </h2>
+                    <div class="flex items-center gap-2">
+                        <div class="flex items-center gap-1" @click.stop>
+                            <span class="hidden sm:inline text-xs text-muted-foreground mr-0.5">Last:</span>
+                            <button
+                                v-for="d in [7, 14, 30, 60, 90]" :key="d"
+                                @click="chartDays = d; loadChartData()"
+                                :class="[
+                                    'rounded-lg px-2 py-0.5 text-xs font-semibold transition',
+                                    chartDays === d
+                                        ? 'bg-primary text-primary-foreground'
+                                        : 'border hover:bg-muted text-muted-foreground',
+                                ]"
+                            >{{ d }}d</button>
+                        </div>
+                        <ChevronDown v-if="!chartCollapsed" class="h-4 w-4 text-muted-foreground shrink-0" />
+                        <ChevronRight v-else class="h-4 w-4 text-muted-foreground shrink-0" />
+                    </div>
+                </div>
+
+                <div v-show="!chartCollapsed">
+                    <div v-if="chartData.length > 0" class="grid grid-cols-3 divide-x border-b text-center">
+                        <div class="px-3 py-2.5">
+                            <p class="text-xs text-muted-foreground">Total Income</p>
+                            <p class="text-sm font-bold text-green-600">{{ fmt(chartTotals.income) }}</p>
+                        </div>
+                        <div class="px-3 py-2.5">
+                            <p class="text-xs text-muted-foreground">Total Expense</p>
+                            <p class="text-sm font-bold text-red-500">{{ fmt(chartTotals.expense) }}</p>
+                        </div>
+                        <div class="px-3 py-2.5">
+                            <p class="text-xs text-muted-foreground">Net</p>
+                            <p class="text-sm font-bold" :class="chartTotals.net >= 0 ? 'text-green-600' : 'text-red-500'">{{ fmt(chartTotals.net) }}</p>
+                        </div>
+                    </div>
+                    <div class="px-2 pt-3 pb-2">
+                        <div v-if="chartLoading" class="flex items-center justify-center h-40 text-muted-foreground text-sm">
+                            <RefreshCw class="h-4 w-4 animate-spin mr-2" /> Loading chart…
+                        </div>
+                        <div v-else-if="chartData.length === 0" class="flex items-center justify-center h-40 text-muted-foreground text-sm">
+                            Click <strong class="mx-1">Generate</strong> to load chart data.
+                        </div>
+                        <svg v-else viewBox="0 0 800 280" class="w-full" preserveAspectRatio="xMidYMid meet">
+                            <template v-for="tick in chartBars.ticks" :key="tick.label">
+                                <line :x1="chartBars.padL" :y1="tick.y" x2="784" :y2="tick.y"
+                                    stroke="currentColor" stroke-opacity="0.08" stroke-width="1" />
+                                <text :x="chartBars.padL - 6" :y="tick.y + 4"
+                                    text-anchor="end" fill="currentColor" opacity="0.45" font-size="10">{{ tick.label }}</text>
+                            </template>
+                            <template v-for="bar in chartBars.bars" :key="bar.labelX">
+                                <rect v-if="bar.incomeH > 0"
+                                    :x="bar.incomeX" :y="bar.incomeY" :width="bar.barW" :height="bar.incomeH"
+                                    fill="#22c55e" opacity="0.8" rx="1.5" />
+                                <rect v-if="bar.expenseH > 0"
+                                    :x="bar.expenseX" :y="bar.expenseY" :width="bar.barW" :height="bar.expenseH"
+                                    fill="#ef4444" opacity="0.8" rx="1.5" />
+                                <text v-if="bar.showLabel"
+                                    :x="bar.labelX" :y="bar.labelY"
+                                    text-anchor="middle" fill="currentColor" opacity="0.45" font-size="9">{{ bar.label }}</text>
+                            </template>
+                            <line :x1="chartBars.padL" :y1="chartBars.baselineY" x2="784" :y2="chartBars.baselineY"
+                                stroke="currentColor" stroke-opacity="0.2" stroke-width="1" />
+                        </svg>
+                        <div class="flex items-center justify-center gap-6 mt-1 pb-1">
+                            <div class="flex items-center gap-1.5">
+                                <div class="w-3 h-3 rounded-sm" style="background:#22c55e;opacity:0.8"></div>
+                                <span class="text-xs text-muted-foreground">Income</span>
+                            </div>
+                            <div class="flex items-center gap-1.5">
+                                <div class="w-3 h-3 rounded-sm" style="background:#ef4444;opacity:0.8"></div>
+                                <span class="text-xs text-muted-foreground">Expense</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Single-day stats -->
+            <div v-if="dailyReport" class="rounded-xl border bg-card p-4 shadow-sm">
+                <h2 class="font-bold text-base mb-4">Daily Stats — {{ dailyReport.date }}</h2>
                 <div class="grid grid-cols-2 sm:grid-cols-3 gap-4">
                     <div class="rounded-lg bg-muted/40 p-4">
                         <p class="text-xs text-muted-foreground mb-1">Total Orders</p>
@@ -1608,10 +1676,79 @@ onMounted(async () => {
         </template>
 
         <!-- ── Monthly Sales ──────────────────────────────────────────────────── -->
-        <template v-if="tab === 'monthly' && monthlyReport">
-            <div class="rounded-xl border bg-card p-4 shadow-sm">
+        <template v-if="tab === 'monthly'">
+            <!-- YTD monthly income vs expense chart -->
+            <div class="rounded-xl border bg-card shadow-sm overflow-hidden">
+                <div class="p-3 sm:p-4 border-b flex flex-wrap items-center justify-between gap-2 cursor-pointer select-none"
+                    @click="monthChartCollapsed = !monthChartCollapsed">
+                    <h2 class="font-bold text-sm flex items-center gap-2">
+                        <BarChart3 class="h-4 w-4 text-primary" /> {{ selectedYear }} Monthly Income vs Expense (YTD)
+                    </h2>
+                    <ChevronDown v-if="!monthChartCollapsed" class="h-4 w-4 text-muted-foreground shrink-0" />
+                    <ChevronRight v-else class="h-4 w-4 text-muted-foreground shrink-0" />
+                </div>
+
+                <div v-show="!monthChartCollapsed">
+                    <div v-if="monthChartData.length > 0" class="grid grid-cols-3 divide-x border-b text-center">
+                        <div class="px-3 py-2.5">
+                            <p class="text-xs text-muted-foreground">Total Income</p>
+                            <p class="text-sm font-bold text-green-600">{{ fmt(monthChartTotals.income) }}</p>
+                        </div>
+                        <div class="px-3 py-2.5">
+                            <p class="text-xs text-muted-foreground">Total Expense</p>
+                            <p class="text-sm font-bold text-red-500">{{ fmt(monthChartTotals.expense) }}</p>
+                        </div>
+                        <div class="px-3 py-2.5">
+                            <p class="text-xs text-muted-foreground">Net</p>
+                            <p class="text-sm font-bold" :class="monthChartTotals.net >= 0 ? 'text-green-600' : 'text-red-500'">{{ fmt(monthChartTotals.net) }}</p>
+                        </div>
+                    </div>
+                    <div class="px-2 pt-3 pb-2">
+                        <div v-if="monthChartLoading" class="flex items-center justify-center h-40 text-muted-foreground text-sm">
+                            <RefreshCw class="h-4 w-4 animate-spin mr-2" /> Loading chart…
+                        </div>
+                        <div v-else-if="monthChartData.length === 0" class="flex items-center justify-center h-40 text-muted-foreground text-sm">
+                            Click <strong class="mx-1">Generate</strong> to load chart data.
+                        </div>
+                        <svg v-else viewBox="0 0 800 280" class="w-full" preserveAspectRatio="xMidYMid meet">
+                            <template v-for="tick in monthChartBars.ticks" :key="tick.label">
+                                <line :x1="monthChartBars.padL" :y1="tick.y" x2="784" :y2="tick.y"
+                                    stroke="currentColor" stroke-opacity="0.08" stroke-width="1" />
+                                <text :x="monthChartBars.padL - 6" :y="tick.y + 4"
+                                    text-anchor="end" fill="currentColor" opacity="0.45" font-size="10">{{ tick.label }}</text>
+                            </template>
+                            <template v-for="bar in monthChartBars.bars" :key="bar.labelX">
+                                <rect v-if="bar.incomeH > 0"
+                                    :x="bar.incomeX" :y="bar.incomeY" :width="bar.barW" :height="bar.incomeH"
+                                    fill="#22c55e" opacity="0.8" rx="2" />
+                                <rect v-if="bar.expenseH > 0"
+                                    :x="bar.expenseX" :y="bar.expenseY" :width="bar.barW" :height="bar.expenseH"
+                                    fill="#ef4444" opacity="0.8" rx="2" />
+                                <text v-if="bar.showLabel"
+                                    :x="bar.labelX" :y="bar.labelY"
+                                    text-anchor="middle" fill="currentColor" opacity="0.45" font-size="10">{{ bar.label }}</text>
+                            </template>
+                            <line :x1="monthChartBars.padL" :y1="monthChartBars.baselineY" x2="784" :y2="monthChartBars.baselineY"
+                                stroke="currentColor" stroke-opacity="0.2" stroke-width="1" />
+                        </svg>
+                        <div class="flex items-center justify-center gap-6 mt-1 pb-1">
+                            <div class="flex items-center gap-1.5">
+                                <div class="w-3 h-3 rounded-sm" style="background:#22c55e;opacity:0.8"></div>
+                                <span class="text-xs text-muted-foreground">Income</span>
+                            </div>
+                            <div class="flex items-center gap-1.5">
+                                <div class="w-3 h-3 rounded-sm" style="background:#ef4444;opacity:0.8"></div>
+                                <span class="text-xs text-muted-foreground">Expense</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Single-month stats -->
+            <div v-if="monthlyReport" class="rounded-xl border bg-card p-4 shadow-sm">
                 <h2 class="font-bold text-base mb-4">
-                    Monthly Sales — {{ monthName(Number(monthlyReport.month?.split('-')[1])) }} {{ monthlyReport.month?.split('-')[0] }}
+                    Monthly Stats — {{ monthName(Number(monthlyReport.month?.split('-')[1])) }} {{ monthlyReport.month?.split('-')[0] }}
                 </h2>
                 <div class="grid grid-cols-2 sm:grid-cols-3 gap-4">
                     <div class="rounded-lg bg-muted/40 p-4">

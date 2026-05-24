@@ -66,6 +66,7 @@ Route::prefix('v1')->group(function () {
         Route::get('/reports/inventory-transactions', [ReportController::class, 'inventoryTransactions']);
         Route::get('/reports/profit-loss', [ReportController::class, 'profitLoss']);
         Route::get('/reports/daily-chart', [ReportController::class, 'dailyChart']);
+        Route::get('/reports/monthly-chart', [ReportController::class, 'monthlyChart']);
 
         // Payment Tenders (authenticated write + all-list)
         Route::get('/payment-tenders/all', [\App\Http\Controllers\Api\V1\PaymentTenderController::class, 'all']);
