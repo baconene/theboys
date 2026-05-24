@@ -344,7 +344,8 @@ const statusColor: Record<string, string> = {
                 <div v-if="filteredEmployees.length === 0" class="p-10 text-center text-muted-foreground">
                     No employees found.
                 </div>
-                <table v-else class="w-full text-sm">
+                <div v-else class="overflow-x-auto">
+                <table class="w-full text-sm">
                     <thead class="bg-muted/50">
                         <tr>
                             <th class="px-4 py-2 text-left font-medium text-muted-foreground">Name</th>
@@ -390,6 +391,7 @@ const statusColor: Record<string, string> = {
                         </tr>
                     </tbody>
                 </table>
+                </div>
             </div>
         </div>
 
@@ -415,7 +417,8 @@ const statusColor: Record<string, string> = {
                 <div v-if="filteredPayroll.length === 0" class="p-10 text-center text-muted-foreground">
                     No payroll records found.
                 </div>
-                <table v-else class="w-full text-sm">
+                <div v-else class="overflow-x-auto">
+                <table class="w-full text-sm">
                     <thead class="bg-muted/50">
                         <tr>
                             <th class="px-4 py-2 text-left font-medium text-muted-foreground">Employee</th>
@@ -474,6 +477,7 @@ const statusColor: Record<string, string> = {
                         </tr>
                     </tbody>
                 </table>
+                </div>
             </div>
         </div>
     </div>

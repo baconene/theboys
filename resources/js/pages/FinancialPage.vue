@@ -312,7 +312,7 @@ onMounted(async () => {
 <template>
     <Head title="Financial Transactions" />
 
-    <div class="space-y-5 p-6">
+    <div class="space-y-5 p-4 md:p-6">
 
         <!-- ── Collapsible Financial Overview ───────────────────────────────── -->
         <div v-if="ftSummary" class="rounded-xl border bg-card shadow-sm overflow-hidden">
@@ -398,7 +398,7 @@ onMounted(async () => {
                     <div class="space-y-3">
 
                         <!-- 3 key metric chips -->
-                        <div class="grid grid-cols-3 gap-3">
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
                             <!-- Net Cash — clickable to reveal tender breakdown -->
                             <button @click="showTenderBreakdown = !showTenderBreakdown"
                                 :class="['rounded-xl border p-3 text-center w-full transition-colors',
@@ -550,7 +550,7 @@ onMounted(async () => {
                     <div class="relative">
                         <Search class="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
                         <input v-model="ftSearch" type="text" placeholder="Filter transactions…"
-                            class="pl-8 rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary w-52" />
+                            class="pl-8 rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary w-full sm:w-52" />
                     </div>
                 </div>
                 <!-- COGS toggle -->

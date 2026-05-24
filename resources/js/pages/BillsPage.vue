@@ -310,7 +310,7 @@ onMounted(async () => {
 <template>
     <Head title="Bills & Payables" />
 
-    <div class="space-y-5 p-6">
+    <div class="space-y-5 p-4 md:p-6">
         <!-- Summary cards -->
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
             <div class="rounded-xl border bg-card p-4 shadow-sm">
@@ -525,8 +525,8 @@ onMounted(async () => {
                                         <!-- Installment schedule table -->
                                         <div v-if="bill.is_installment && bill.installments.length > 0" class="space-y-1.5">
                                             <p class="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Installment Schedule</p>
-                                            <div class="rounded-lg border overflow-hidden">
-                                                <table class="w-full text-xs">
+                                            <div class="rounded-lg border overflow-hidden overflow-x-auto">
+                                                <table class="w-full text-xs min-w-[520px]">
                                                     <thead class="bg-muted/50 text-muted-foreground">
                                                         <tr>
                                                             <th class="px-3 py-2 text-left font-medium">#</th>
@@ -578,7 +578,7 @@ onMounted(async () => {
                                         </div>
 
                                         <!-- Action buttons -->
-                                        <div class="flex gap-2 pt-2">
+                                        <div class="flex flex-wrap gap-2 pt-2">
                                             <button v-if="!bill.is_installment && bill.is_active" @click="payBill(bill)" :disabled="billPaying === bill.id"
                                                 class="flex-1 rounded bg-green-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-green-700 disabled:opacity-50">
                                                 {{ billPaying === bill.id ? 'Processing…' : '💰 Mark as Paid' }}
