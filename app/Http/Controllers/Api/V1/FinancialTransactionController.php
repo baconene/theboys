@@ -124,6 +124,11 @@ class FinancialTransactionController extends Controller {
         $payments  = (float)($rows['payment']?->total ?? 0);
         $payroll   = (float)($rows['payroll']?->total ?? 0);
 
+        // Running balance as of the end of the filter period
+        $balanceAsOfEnd = (float) (FinancialTransaction::where('transacted_at', '<=', $end)
+            ->orderByDesc('transacted_at')->orderByDesc('id')
+            ->value('running_balance') ?? 0.0);
+
         return response()->json([
             'period'             => ['start' => $start->toDateString(), 'end' => $end->toDateString()],
             'payments'           => ['total' => $payments,   'count' => $rows['payment']?->count  ?? 0],
@@ -131,6 +136,7 @@ class FinancialTransactionController extends Controller {
             'income_adjustments' => ['total' => $incomeAdj,  'count' => $rows['income_adjustment']?->count ?? 0],
             'payroll'            => ['total' => $payroll,    'count' => $rows['payroll']?->count  ?? 0],
             'net'                => $payments + $incomeAdj - $expenses - $payroll,
+            'balance_as_of_end'  => $balanceAsOfEnd,
             'by_tender'          => $byTender,
             'net_by_tender'      => $netByTender,
             'include_cogs'       => $includeCogs,

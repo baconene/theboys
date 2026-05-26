@@ -397,6 +397,19 @@ onMounted(async () => {
                     <!-- RIGHT: Comparison panel ─────────────────────────────── -->
                     <div class="space-y-3">
 
+                        <!-- Balance as of end date -->
+                        <div :class="['rounded-xl border p-3 text-center',
+                            (ftSummary.balance_as_of_end ?? 0) >= 0
+                                ? 'bg-emerald-50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800'
+                                : 'bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-800']">
+                            <p class="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-1">Balance as of {{ ftSummary.period?.end }}</p>
+                            <p class="text-xl font-black leading-tight tabular-nums"
+                                :class="(ftSummary.balance_as_of_end ?? 0) >= 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-600'">
+                                {{ fmt(ftSummary.balance_as_of_end ?? 0) }}
+                            </p>
+                            <p class="text-[10px] text-muted-foreground mt-0.5">running balance</p>
+                        </div>
+
                         <!-- 3 key metric chips -->
                         <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
                             <!-- Net Cash — clickable to reveal tender breakdown -->
