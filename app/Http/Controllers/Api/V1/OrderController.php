@@ -25,7 +25,7 @@ class OrderController extends Controller
         private OrderRepository $orderRepository
     ) {}
 
-    public function index(Request $request): JsonResponse
+    public function index(Request $request)
     {
         $this->checkPermission('view orders');
 
@@ -45,7 +45,7 @@ class OrderController extends Controller
             ->orderByDesc('created_at')
             ->paginate(min((int) $request->input('per_page', 20), 100));
 
-        return response()->json(OrderResource::collection($orders));
+        return OrderResource::collection($orders);
     }
 
     public function store(StoreOrderRequest $request): JsonResponse
