@@ -39,7 +39,7 @@ interface FtSummary {
 }
 interface FtTransaction {
     id: number; type: string; amount: number; description: string; transacted_at: string
-    running_balance: number
+    running_balance: number; notes: string | null
     user?: { name: string }; tender?: { name: string }
 }
 interface OrderRow {
@@ -179,6 +179,9 @@ const showEntryForm = ref(false)
 const entryForm = ref({ type: 'expense' as 'expense' | 'income_adjustment', description: '', amount: '', notes: '', transacted_at: '' })
 const entrySaving = ref(false)
 const ftDeleting = ref<number | null>(null)
+const editingFt = ref<FtTransaction | null>(null)
+const ftEditForm = ref({ amount: '', description: '', notes: '', transacted_at: '' })
+const ftEditSaving = ref(false)
 
 // ── Bills / Payables ──────────────────────────────────────────────────────
 const bills = ref<Bill[]>([])
@@ -505,6 +508,37 @@ const deleteEntry = async (tx: FtTransaction) => {
         toast.error(err.response?.data?.message ?? 'Failed to delete entry.')
     } finally {
         ftDeleting.value = null
+    }
+}
+
+const openEditFt = (tx: FtTransaction) => {
+    editingFt.value = tx
+    ftEditForm.value = {
+        amount: String(tx.amount),
+        description: tx.description,
+        notes: tx.notes ?? '',
+        transacted_at: tx.transacted_at.slice(0, 10),
+    }
+    showEntryForm.value = false
+}
+
+const updateEntry = async () => {
+    if (!editingFt.value || !ftEditForm.value.description.trim() || !ftEditForm.value.amount) return
+    ftEditSaving.value = true
+    try {
+        await api.put(`/api/v1/financial-transactions/${editingFt.value.id}`, {
+            amount: parseFloat(ftEditForm.value.amount),
+            description: ftEditForm.value.description,
+            notes: ftEditForm.value.notes || null,
+            transacted_at: ftEditForm.value.transacted_at || null,
+        })
+        toast.success('Entry updated.')
+        editingFt.value = null
+        await loadFinancial(ftPage.value)
+    } catch (err: any) {
+        toast.error(err.response?.data?.message ?? 'Failed to update entry.')
+    } finally {
+        ftEditSaving.value = false
     }
 }
 
@@ -1137,6 +1171,49 @@ onMounted(async () => {
                 </div>
             </div>
 
+            <div v-if="editingFt" class="rounded-xl border bg-card shadow-sm p-4">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="font-semibold text-sm">Edit Transaction</h3>
+                    <button @click="editingFt = null" class="rounded p-1 text-muted-foreground hover:bg-muted transition">
+                        <X class="h-4 w-4" />
+                    </button>
+                </div>
+                <div class="mb-3">
+                    <span :class="['rounded-full px-2 py-0.5 text-xs font-semibold', typeBadgeClass(editingFt.type)]">{{ typeLabel(editingFt.type) }}</span>
+                </div>
+                <div class="grid sm:grid-cols-4 gap-3">
+                    <div class="sm:col-span-2">
+                        <label class="text-xs font-medium text-muted-foreground block mb-1">Description *</label>
+                        <input v-model="ftEditForm.description" type="text"
+                            class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                    </div>
+                    <div>
+                        <label class="text-xs font-medium text-muted-foreground block mb-1">Amount (₱) *</label>
+                        <input v-model="ftEditForm.amount" type="number" min="0.01" step="0.01"
+                            class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                    </div>
+                    <div>
+                        <label class="text-xs font-medium text-muted-foreground block mb-1">Date</label>
+                        <input v-model="ftEditForm.transacted_at" type="date"
+                            class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                    </div>
+                    <div class="sm:col-span-3">
+                        <label class="text-xs font-medium text-muted-foreground block mb-1">Notes (optional)</label>
+                        <input v-model="ftEditForm.notes" type="text" placeholder="Additional details"
+                            class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                    </div>
+                    <div class="flex items-end">
+                        <button
+                            @click="updateEntry"
+                            :disabled="ftEditSaving || !ftEditForm.description.trim() || !ftEditForm.amount"
+                            class="w-full rounded-lg px-4 py-2 text-sm font-bold text-white bg-primary hover:bg-primary/90 disabled:opacity-50 transition"
+                        >
+                            {{ ftEditSaving ? 'Saving…' : 'Save Changes' }}
+                        </button>
+                    </div>
+                </div>
+            </div>
+
             <div v-if="ftTransactions.length > 0" class="rounded-xl border bg-card shadow-sm overflow-hidden">
                 <div class="overflow-x-auto">
                     <table class="w-full text-sm">
@@ -1166,15 +1243,25 @@ onMounted(async () => {
                                 </td>
                                 <td class="px-4 py-2 text-muted-foreground text-xs">{{ tx.user?.name ?? '—' }}</td>
                                 <td class="px-4 py-2 text-center">
-                                    <button
-                                        v-if="tx.type === 'expense' || tx.type === 'income_adjustment'"
-                                        @click="deleteEntry(tx)"
-                                        :disabled="ftDeleting === tx.id"
-                                        class="rounded p-1 text-muted-foreground hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 disabled:opacity-40 transition"
-                                        title="Delete entry"
-                                    >
-                                        <Trash2 class="h-3.5 w-3.5" />
-                                    </button>
+                                    <div class="flex items-center justify-center gap-1">
+                                        <button
+                                            v-if="tx.type !== 'order'"
+                                            @click="openEditFt(tx)"
+                                            class="rounded p-1 text-muted-foreground hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/30 transition"
+                                            title="Edit entry"
+                                        >
+                                            <Pencil class="h-3.5 w-3.5" />
+                                        </button>
+                                        <button
+                                            v-if="tx.type === 'expense' || tx.type === 'income_adjustment'"
+                                            @click="deleteEntry(tx)"
+                                            :disabled="ftDeleting === tx.id"
+                                            class="rounded p-1 text-muted-foreground hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 disabled:opacity-40 transition"
+                                            title="Delete entry"
+                                        >
+                                            <Trash2 class="h-3.5 w-3.5" />
+                                        </button>
+                                    </div>
                                 </td>
                             </tr>
                         </tbody>

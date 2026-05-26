@@ -164,8 +164,8 @@ class FinancialTransactionController extends Controller {
     public function update(Request $request, FinancialTransaction $financialTransaction): JsonResponse {
         if (! auth()->user()?->hasAnyRole('admin', 'auditor')) abort(403);
 
-        if (! in_array($financialTransaction->type, ['expense', 'income_adjustment'])) {
-            abort(422, 'Only manually created entries can be edited.');
+        if ($financialTransaction->type === 'order') {
+            abort(422, 'Order records cannot be edited.');
         }
 
         $data = $request->validate([
