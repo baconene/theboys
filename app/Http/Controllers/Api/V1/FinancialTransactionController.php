@@ -124,10 +124,13 @@ class FinancialTransactionController extends Controller {
         $payments  = (float)($rows['payment']?->total ?? 0);
         $payroll   = (float)($rows['payroll']?->total ?? 0);
 
-        // Running balance as of the end of the filter period
-        $balanceAsOfEnd = (float) (FinancialTransaction::where('transacted_at', '<=', $end)
-            ->orderByDesc('transacted_at')->orderByDesc('id')
-            ->value('running_balance') ?? 0.0);
+        // Balance as of end date: cumulative sum of non-order transactions up to end date,
+        // using the same logic as the financial_balance column in the transaction list.
+        $balanceAsOfEnd = (float) (FinancialTransaction::where('type', '!=', 'order')
+            ->when(! $includeCogs, $noCogs)
+            ->whereDate('transacted_at', '<=', $end->toDateString())
+            ->selectRaw("SUM(CASE WHEN type IN ('payment','income_adjustment') THEN amount ELSE -amount END) as bal")
+            ->value('bal') ?? 0.0);
 
         return response()->json([
             'period'             => ['start' => $start->toDateString(), 'end' => $end->toDateString()],
