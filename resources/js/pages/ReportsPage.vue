@@ -526,7 +526,7 @@ const updateEntry = async () => {
     if (!editingFt.value || !ftEditForm.value.description.trim() || !ftEditForm.value.amount) return
     ftEditSaving.value = true
     try {
-        await api.put(`/api/v1/financial-transactions/${editingFt.value.id}`, {
+        await api.patch(`/api/v1/financial-transactions/${editingFt.value.id}`, {
             amount: parseFloat(ftEditForm.value.amount),
             description: ftEditForm.value.description,
             notes: ftEditForm.value.notes || null,

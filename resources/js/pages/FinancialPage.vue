@@ -629,7 +629,7 @@ onMounted(async () => {
             <div class="flex items-center justify-between mb-3">
                 <p class="text-sm font-bold flex items-center gap-2">
                     <Pencil class="h-4 w-4 text-primary" />
-                    Edit {{ editingTx.type === 'income_adjustment' ? 'Income Adjustment' : 'Expense' }}
+                    Edit {{ typeLabel(editingTx.type) }}
                     <span class="text-xs text-muted-foreground font-normal">#{{ editingTx.id }}</span>
                 </p>
                 <button @click="cancelEdit" class="text-muted-foreground hover:text-foreground">
@@ -733,7 +733,7 @@ onMounted(async () => {
                             <td class="px-4 py-3 text-sm text-muted-foreground">{{ tx.user?.name ?? '—' }}</td>
                             <td class="px-4 py-3 text-center">
                                 <div class="flex items-center justify-center gap-1">
-                                    <button v-if="['expense','income_adjustment'].includes(tx.type)"
+                                    <button v-if="tx.type !== 'order'"
                                         @click="startEdit(tx)"
                                         :class="['hover:text-primary transition-colors', editingTx?.id === tx.id ? 'text-primary' : 'text-muted-foreground']"
                                         title="Edit">
