@@ -84,6 +84,98 @@ function initWelcomeAnimations() {
     if (bannerStrip) {
         gsap.from(bannerStrip, { y: -20, opacity: 0, duration: 0.4, ease: 'power2.out' });
     }
+
+    /* ── Declarative data-gsap attributes (usable in Page Content editor) ── */
+    /*
+     * Admins can add these attributes to any element in the HTML editor.
+     * <script> tags in v-html are stripped by Vue — use these instead.
+     *
+     * AVAILABLE ANIMATIONS:
+     *
+     * data-gsap="from"
+     *   Plays once on page load. Combine with optional props below.
+     *   <div data-gsap="from" data-gsap-y="60" data-gsap-opacity="0" data-gsap-duration="1">…</div>
+     *
+     * data-gsap="scrollIn"
+     *   Fades up when the element enters the viewport.
+     *   <div data-gsap="scrollIn">…</div>
+     *
+     * data-gsap="scrollIn-stagger"
+     *   Same as scrollIn but staggers all direct children.
+     *   <div data-gsap="scrollIn-stagger">
+     *     <div>Card 1</div><div>Card 2</div>
+     *   </div>
+     *
+     * data-gsap="float"
+     *   Infinite up-down float (great for emojis / icons).
+     *   <span data-gsap="float" data-gsap-y="-14">🍔</span>
+     *
+     * data-gsap="pulse-scale"
+     *   Infinite subtle scale pulse.
+     *   <div data-gsap="pulse-scale">🔥</div>
+     *
+     * OPTIONAL PROP OVERRIDES (all optional, use data-gsap-* attributes):
+     *   data-gsap-y         — vertical offset in px  (default: 40)
+     *   data-gsap-x         — horizontal offset       (default: 0)
+     *   data-gsap-opacity   — start opacity 0–1        (default: 0)
+     *   data-gsap-duration  — seconds                  (default: 0.75)
+     *   data-gsap-delay     — seconds                  (default: 0)
+     *   data-gsap-ease      — GSAP ease string         (default: 'power2.out')
+     *   data-gsap-stagger   — stagger gap in seconds   (default: 0.1)
+     */
+    function parseNum(el, attr, fallback) {
+        const v = el.dataset[attr];
+        return v !== undefined ? parseFloat(v) : fallback;
+    }
+    function parseStr(el, attr, fallback) {
+        return el.dataset[attr] ?? fallback;
+    }
+
+    document.querySelectorAll('[data-gsap]').forEach(el => {
+        const type     = el.dataset.gsap;
+        const y        = parseNum(el, 'gsapY',        40);
+        const x        = parseNum(el, 'gsapX',         0);
+        const opacity  = parseNum(el, 'gsapOpacity',   0);
+        const duration = parseNum(el, 'gsapDuration', 0.75);
+        const delay    = parseNum(el, 'gsapDelay',     0);
+        const ease     = parseStr(el, 'gsapEase',      'power2.out');
+        const stagger  = parseNum(el, 'gsapStagger',   0.1);
+
+        if (type === 'from') {
+            gsap.from(el, { y, x, opacity, duration, delay, ease, clearProps: 'all' });
+
+        } else if (type === 'scrollIn') {
+            ScrollTrigger.create({
+                trigger: el, start: 'top 82%', once: true,
+                onEnter: () => gsap.from(el, { y, x, opacity, duration, delay, ease, clearProps: 'all' })
+            });
+
+        } else if (type === 'scrollIn-stagger') {
+            const children = el.children;
+            ScrollTrigger.create({
+                trigger: el, start: 'top 82%', once: true,
+                onEnter: () => gsap.from(children, {
+                    y, x, opacity, duration, stagger, delay, ease, clearProps: 'all'
+                })
+            });
+
+        } else if (type === 'float') {
+            gsap.to(el, {
+                y: parseNum(el, 'gsapY', -10),
+                repeat: -1, yoyo: true,
+                duration: parseNum(el, 'gsapDuration', 2),
+                ease: 'sine.inOut', delay
+            });
+
+        } else if (type === 'pulse-scale') {
+            gsap.to(el, {
+                scale: parseNum(el, 'gsapScale', 1.08),
+                repeat: -1, yoyo: true,
+                duration: parseNum(el, 'gsapDuration', 1.4),
+                ease: 'sine.inOut', delay
+            });
+        }
+    });
 }
 
 /* ─── Inertia fires this after Vue finishes rendering each page ─────────────── */
