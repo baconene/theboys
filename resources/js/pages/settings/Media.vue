@@ -31,11 +31,36 @@ const dropping   = ref(false)
 const uploading  = ref(false)
 const fileInput  = ref<HTMLInputElement | null>(null)
 
+const MAX_BYTES = 10 * 1024 * 1024  // 10 MB — must match server & controller
+const ALLOWED   = ['image/jpeg','image/png','image/webp','image/gif','image/svg+xml',
+                   'video/mp4','video/quicktime','video/x-msvideo','application/pdf']
+
+function getCsrfToken(): string {
+    const match = document.cookie.match(/XSRF-TOKEN=([^;]+)/)
+    return match ? decodeURIComponent(match[1]) : ''
+}
+
 async function uploadFiles(files: FileList | null) {
     if (!files || files.length === 0) return
+
+    // ── Client-side validation before any network request ──
+    const valid: File[] = []
+    for (const file of Array.from(files)) {
+        if (file.size > MAX_BYTES) {
+            toast.error(`"${file.name}" is too large (max 10 MB).`)
+            continue
+        }
+        if (!ALLOWED.includes(file.type)) {
+            toast.error(`"${file.name}" — unsupported file type (${file.type || 'unknown'}).`)
+            continue
+        }
+        valid.push(file)
+    }
+    if (!valid.length) return
+
     uploading.value = true
 
-    for (const file of Array.from(files)) {
+    for (const file of valid) {
         const fd = new FormData()
         fd.append('file', file)
         try {
@@ -43,19 +68,30 @@ async function uploadFiles(files: FileList | null) {
                 method: 'POST',
                 body: fd,
                 headers: {
-                    'X-XSRF-TOKEN': decodeURIComponent(document.cookie.match(/XSRF-TOKEN=([^;]+)/)?.[1] ?? ''),
+                    'X-XSRF-TOKEN':    getCsrfToken(),
                     'X-Requested-With': 'XMLHttpRequest',
-                    'Accept': 'application/json',
+                    'Accept':           'application/json',
                 },
             })
-            if (!res.ok) {
-                const err = await res.json()
-                toast.error(err.message ?? `Failed to upload ${file.name}`)
-            } else {
-                toast.success(`${file.name} uploaded.`)
+
+            if (res.status === 413) {
+                toast.error(`"${file.name}" was rejected by the server (file too large). Ask your host to raise client_max_body_size in Nginx or post_max_size in PHP.`)
+                continue
             }
-        } catch {
-            toast.error(`Upload failed: ${file.name}`)
+
+            if (!res.ok) {
+                let msg = `Upload failed: ${file.name}`
+                try {
+                    const body = await res.json()
+                    msg = body.message ?? Object.values(body.errors ?? {})?.[0]?.[0] ?? msg
+                } catch { /* ignore */ }
+                toast.error(msg)
+                continue
+            }
+
+            toast.success(`"${file.name}" uploaded.`)
+        } catch (err) {
+            toast.error(`Network error uploading "${file.name}". Check your connection.`)
         }
     }
 
@@ -151,7 +187,7 @@ const filtered = computed(() => {
             <p class="font-medium text-sm mb-1">
                 {{ uploading ? 'Uploading…' : 'Click to upload or drag & drop' }}
             </p>
-            <p class="text-xs text-muted-foreground">Images (JPG, PNG, WebP, GIF, SVG), Videos (MP4, MOV, AVI), PDF — max 10 MB each</p>
+            <p class="text-xs text-muted-foreground">Images (JPG, PNG, WebP, GIF, SVG) · Videos (MP4, MOV, AVI) · PDF — <strong>max 10 MB</strong> each</p>
         </div>
 
         <!-- ── Filter bar ────────────────────────────────────────────────── -->
