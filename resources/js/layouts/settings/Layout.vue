@@ -24,6 +24,8 @@ const baseNavItems: NavItem[] = [
 const sidebarNavItems = computed<NavItem[]>(() => {
     const items = [...baseNavItems];
     if (isAdmin.value) {
+        items.push({ title: 'Page Content', href: '/settings/page-content' });
+        items.push({ title: 'Media', href: '/settings/media' });
         items.push({ title: 'Prices', href: '/settings/prices' });
         items.push({ title: 'Advertisements', href: '/settings/advertisements' });
         items.push({ title: 'Payment Tenders', href: '/settings/payment-tenders' });

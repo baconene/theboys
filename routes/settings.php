@@ -2,6 +2,8 @@
 
 use App\Http\Controllers\Settings\AdvertisementController;
 use App\Http\Controllers\Settings\LogoController;
+use App\Http\Controllers\Settings\MediaController;
+use App\Http\Controllers\Settings\PageContentController;
 use App\Http\Controllers\Settings\PriceManagementController;
 use App\Http\Controllers\Settings\ProfileController;
 use App\Http\Controllers\Settings\SecurityController;
@@ -78,6 +80,45 @@ Route::middleware(['auth'])->group(function () {
         ->middleware('role:admin');
     Route::post('settings/advertisements/{advertisement}/toggle', [AdvertisementController::class, 'toggle'])
         ->name('settings.advertisements.toggle')
+        ->middleware('role:admin');
+
+    // Page Content (admin only)
+    Route::get('settings/page-content', [PageContentController::class, 'index'])
+        ->name('settings.page-content')
+        ->middleware('role:admin');
+    Route::patch('settings/page-content/{section}', [PageContentController::class, 'update'])
+        ->name('settings.page-content.update')
+        ->middleware('role:admin');
+    Route::post('settings/page-content/reorder', [PageContentController::class, 'reorder'])
+        ->name('settings.page-content.reorder')
+        ->middleware('role:admin');
+    Route::post('settings/page-content/{section}/toggle', [PageContentController::class, 'toggle'])
+        ->name('settings.page-content.toggle')
+        ->middleware('role:admin');
+
+    // Media Library (admin only)
+    Route::get('settings/media', [MediaController::class, 'index'])
+        ->name('settings.media')
+        ->middleware('role:admin');
+    Route::post('settings/media', [MediaController::class, 'store'])
+        ->name('settings.media.store')
+        ->middleware('role:admin');
+    Route::get('settings/media/json', function () {
+        abort_unless(auth()->user()?->hasRole('admin'), 403);
+        return response()->json(
+            \App\Models\MediaFile::latest()->get()->map(fn ($f) => [
+                'id'            => $f->id,
+                'original_name' => $f->original_name,
+                'filename'      => $f->filename,
+                'mime_type'     => $f->mime_type,
+                'size'          => $f->size,
+                'url'           => $f->url,
+                'is_image'      => $f->is_image,
+            ])
+        );
+    })->name('settings.media.json')->middleware('role:admin');
+    Route::delete('settings/media/{media}', [MediaController::class, 'destroy'])
+        ->name('settings.media.destroy')
         ->middleware('role:admin');
 });
 
