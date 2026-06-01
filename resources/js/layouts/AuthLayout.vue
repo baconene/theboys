@@ -11,6 +11,7 @@ const page = usePage();
 const logoUrl = (page.props as any).logoUrl as string | null;
 </script>
 
+
 <template>
     <div class="min-h-svh lg:grid lg:grid-cols-2">
         <!-- Left panel — The Boys branding -->

@@ -178,8 +178,9 @@ const colorMap: Record<string, string> = {
                                 class="group relative flex flex-col rounded-2xl border border-white/5 overflow-hidden hover:border-orange-700/60 transition-all duration-300"
                                 style="background: rgba(255,255,255,0.02)"
                             >
-                                <!-- Product image -->
-                                <div class="relative h-44 w-full overflow-hidden bg-gradient-to-br from-orange-950 to-red-950 shrink-0">
+                                                <!-- Product image -->
+                                <div class="relative h-44 w-full overflow-hidden bg-gradient-to-br from-orange-950 to-red-950 shrink-0"
+                                    :id="item === cat.products[0] && cat === categories[0] ? 'burger' : undefined">
                                     <img
                                         v-if="item.image"
                                         :src="item.image"
