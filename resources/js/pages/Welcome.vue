@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { Head, Link } from '@inertiajs/vue3'
-import { dashboard, login } from '@/routes'
+import { ref, computed } from 'vue'
+import { Head, usePage } from '@inertiajs/vue3'
+import { Menu, X } from 'lucide-vue-next'
 
 interface ProductCard { id: number; name: string; price: number; description: string | null; image: string | null }
 interface CategoryGroup { name: string; products: ProductCard[] }
-interface PageSection { key: string; content: string | null; position: string }
+interface PageSection { key: string; label: string; content: string | null; position: string }
 
 const props = withDefaults(defineProps<{
     canRegister?: boolean
@@ -22,6 +23,32 @@ const props = withDefaults(defineProps<{
     afterSections: () => [],
 })
 
+const page    = usePage()
+const logoUrl = computed(() => (page.props as any).logoUrl as string | null)
+
+const mobileMenuOpen = ref(false)
+
+// Build nav links from sections (skip 'hero' — that's the top of the page)
+// Always inject a "Menu" link pointing at the product grid
+const navLinks = computed(() => {
+    const links: { label: string; href: string }[] = []
+    for (const s of props.beforeSections) {
+        if (s.key !== 'hero') links.push({ label: s.label, href: `#${s.key}` })
+    }
+    links.push({ label: 'Menu', href: '#menu' })
+    for (const s of props.afterSections) {
+        links.push({ label: s.label, href: `#${s.key}` })
+    }
+    return links
+})
+
+function scrollTo(href: string) {
+    mobileMenuOpen.value = false
+    const id  = href.replace('#', '')
+    const el  = document.getElementById(id)
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
 const colorMap: Record<string, string> = {
     orange: 'bg-orange-500 text-black',
     red:    'bg-red-600 text-white',
@@ -37,22 +64,54 @@ const colorMap: Record<string, string> = {
     <div class="min-h-screen bg-[#0a0602] text-white font-sans overflow-x-hidden">
 
         <!-- ── NAV ─────────────────────────────────────────── -->
-        <nav class="fixed top-0 inset-x-0 z-50 flex items-center justify-between px-6 py-4 bg-black/60 backdrop-blur-sm border-b border-orange-900/40">
-            <div class="flex items-center gap-3">
-                <div class="h-9 w-9 rounded-full border-2 border-orange-500 flex items-center justify-center">
-                    <span class="text-[9px] font-black text-orange-400 leading-tight text-center">THE<br>BOYS</span>
-                </div>
-                <span class="text-lg font-black tracking-widest text-white">THE <span class="text-orange-500">BOYS</span></span>
+        <nav class="fixed top-0 inset-x-0 z-50 bg-black/70 backdrop-blur-md border-b border-orange-900/40">
+            <div class="flex items-center justify-between px-5 py-3">
+
+                <!-- Logo + brand -->
+                <a href="#" @click.prevent="scrollTo('#hero')" class="flex items-center gap-2.5 shrink-0">
+                    <div class="h-9 w-9 rounded-full border-2 border-orange-500 overflow-hidden flex items-center justify-center bg-black/40">
+                        <img v-if="logoUrl" :src="logoUrl" alt="The Boys" class="h-full w-full object-cover" />
+                        <span v-else class="text-[8px] font-black text-orange-400 leading-tight text-center">THE<br>BOYS</span>
+                    </div>
+                    <span class="text-base font-black tracking-widest text-white hidden sm:block">
+                        THE <span class="text-orange-500">BOYS</span>
+                    </span>
+                </a>
+
+                <!-- Desktop nav links -->
+                <ul v-if="navLinks.length" class="hidden md:flex items-center gap-1">
+                    <li v-for="link in navLinks" :key="link.href">
+                        <a
+                            :href="link.href"
+                            @click.prevent="scrollTo(link.href)"
+                            class="px-3 py-1.5 rounded-full text-xs font-semibold text-gray-300 hover:text-white hover:bg-white/10 transition-colors"
+                        >{{ link.label }}</a>
+                    </li>
+                </ul>
+
+                <!-- Mobile hamburger -->
+                <button
+                    @click="mobileMenuOpen = !mobileMenuOpen"
+                    class="md:hidden rounded-lg p-2 text-gray-300 hover:text-white hover:bg-white/10 transition"
+                    :aria-label="mobileMenuOpen ? 'Close menu' : 'Open menu'"
+                >
+                    <X v-if="mobileMenuOpen" class="h-5 w-5" />
+                    <Menu v-else class="h-5 w-5" />
+                </button>
             </div>
-            <div class="flex items-center gap-3">
-                <Link v-if="$page.props.auth?.user" :href="dashboard()"
-                    class="rounded-full border border-orange-500 px-5 py-1.5 text-sm font-semibold text-orange-400 hover:bg-orange-500 hover:text-black transition-colors">
-                    Dashboard
-                </Link>
-                <Link v-else :href="login()"
-                    class="rounded-full bg-orange-500 px-5 py-1.5 text-sm font-bold text-black hover:bg-orange-400 transition-colors">
-                    Staff Login
-                </Link>
+
+            <!-- Mobile dropdown -->
+            <div v-if="mobileMenuOpen && navLinks.length"
+                class="md:hidden border-t border-orange-900/30 bg-black/90 px-5 pb-4 pt-2">
+                <ul class="flex flex-col gap-1">
+                    <li v-for="link in navLinks" :key="link.href">
+                        <a
+                            :href="link.href"
+                            @click.prevent="scrollTo(link.href)"
+                            class="block px-3 py-2.5 rounded-lg text-sm font-semibold text-gray-300 hover:text-white hover:bg-white/10 transition-colors"
+                        >{{ link.label }}</a>
+                    </li>
+                </ul>
             </div>
         </nav>
 
@@ -71,7 +130,7 @@ const colorMap: Record<string, string> = {
         <!-- ── BEFORE-PRODUCTS CMS SECTIONS ─────────────────── -->
         <!-- spacer so content clears fixed nav + any banners -->
         <div :style="{ paddingTop: banners.length ? (65 + banners.length * 44) + 'px' : '65px' }"></div>
-        <div v-for="s in beforeSections" :key="s.key" v-html="s.content ?? ''"></div>
+        <div v-for="s in beforeSections" :key="s.key" :id="s.key" v-html="s.content ?? ''"></div>
 
         <!-- ── PROMOTIONS ──────────────────────────────────── -->
         <section v-if="promos.length" class="py-12 px-6 border-t border-orange-900/30">
@@ -99,7 +158,7 @@ const colorMap: Record<string, string> = {
 <!-- star_product is now served from beforeSections above -->
 
         <!-- ── MENU GRID ────────────────────────────────────── -->
-        <section class="py-24 px-6 bg-gradient-to-b from-transparent to-black/40">
+        <section id="menu" class="py-24 px-6 bg-gradient-to-b from-transparent to-black/40">
             <div class="max-w-5xl mx-auto">
                 <div class="text-center mb-14">
                     <p class="text-orange-500 text-xs font-bold uppercase tracking-widest mb-3">Hot Off The Grill</p>
@@ -170,7 +229,7 @@ const colorMap: Record<string, string> = {
         </section>
 
         <!-- ── AFTER-PRODUCTS CMS SECTIONS ──────────────────── -->
-        <div v-for="s in afterSections" :key="s.key" v-html="s.content ?? ''"></div>
+        <div v-for="s in afterSections" :key="s.key" :id="s.key" v-html="s.content ?? ''"></div>
 
         <!-- ── FOOTER ─────────────────────────────────────── -->
         <footer class="border-t border-orange-900/30 px-6 py-8 text-center">
@@ -188,4 +247,10 @@ const colorMap: Record<string, string> = {
 
 <style scoped>
 .bg-white\/3 { background-color: rgba(255,255,255,0.03); }
+</style>
+
+<style>
+html { scroll-behavior: smooth; }
+/* offset scrollIntoView so the fixed nav doesn't cover the target */
+[id] { scroll-margin-top: 72px; }
 </style>

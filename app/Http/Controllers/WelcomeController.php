@@ -38,7 +38,7 @@ class WelcomeController extends Controller
 
         $sections = PageSection::where('is_active', true)
             ->orderBy('display_order')
-            ->get(['key', 'content', 'position']);
+            ->get(['key', 'label', 'content', 'position']);
 
         return Inertia::render('Welcome', [
             'canRegister'      => Features::enabled(Features::registration()),
