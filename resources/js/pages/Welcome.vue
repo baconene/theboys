@@ -2,11 +2,15 @@
 import { Head, Link } from '@inertiajs/vue3'
 import { dashboard, login } from '@/routes'
 
-withDefaults(defineProps<{
+interface ProductCard { id: number; name: string; price: number; description: string | null; image: string | null }
+interface CategoryGroup { name: string; products: ProductCard[] }
+
+const props = withDefaults(defineProps<{
     canRegister?: boolean
     banners?: { id: number; title: string; body: string | null; badge_text: string | null; bg_color: string }[]
     promos?: { id: number; title: string; body: string | null; badge_text: string | null }[]
-}>(), { canRegister: false, banners: () => [], promos: () => [] })
+    categories?: CategoryGroup[]
+}>(), { canRegister: false, banners: () => [], promos: () => [], categories: () => [] })
 
 const colorMap: Record<string, string> = {
     orange: 'bg-orange-500 text-black',
@@ -169,29 +173,66 @@ const colorMap: Record<string, string> = {
                     <h2 class="text-4xl font-black">Our Menu</h2>
                 </div>
 
-                <div class="grid sm:grid-cols-2 gap-6">
-                    <div v-for="item in [
-                        { emoji: '🍔', name: 'The Boys Classic Smash', desc: 'Double smash patty, melted cheese, caramelized onions, signature The Boys sauce.', tag: 'Star' },
-                        { emoji: '🌶️', name: 'Spicy Calamba Burger', desc: 'Flame-grilled patty with jalapeños, sriracha aioli, and pepper jack cheese.' , tag: null },
-                        { emoji: '🐓', name: 'Grilled Chicken Burger', desc: 'Juicy marinated chicken thigh fillet, fresh lettuce, tomato, and garlic mayo.', tag: null },
-                        { emoji: '🥩', name: 'BBQ Bacon Smash', desc: 'Smash patty topped with crispy bacon strips, BBQ glaze, and cheddar cheese.', tag: null },
-                    ]" :key="item.name"
-                        class="group relative flex gap-5 items-start rounded-2xl border border-white/5 p-5 hover:border-orange-700/60 hover:bg-orange-950/30 transition-all duration-300"
-                        style="background: rgba(255,255,255,0.02)">
-                        <div v-if="item.tag" class="absolute top-3 right-3 bg-orange-500 text-black text-[10px] font-black px-2 py-0.5 rounded-full uppercase">
-                            {{ item.tag }}
+                <!-- ── Dynamic product cards from database ── -->
+                <template v-if="categories.length">
+                    <div v-for="cat in categories" :key="cat.name" class="mb-12 last:mb-0">
+                        <div class="flex items-center gap-3 mb-6">
+                            <span class="text-orange-500 text-xs font-bold uppercase tracking-widest">{{ cat.name }}</span>
+                            <div class="flex-1 h-px bg-orange-900/40"></div>
                         </div>
-                        <div class="shrink-0 w-16 h-16 rounded-xl bg-gradient-to-br from-orange-900 to-red-950 border border-orange-800/40 flex items-center justify-center text-3xl shadow-inner">
-                            {{ item.emoji }}
-                        </div>
-                        <div class="flex-1 min-w-0">
-                            <h3 class="font-bold text-white text-sm leading-tight mb-1">{{ item.name }}</h3>
-                            <p class="text-xs text-gray-400 leading-relaxed">{{ item.desc }}</p>
+                        <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                            <div
+                                v-for="item in cat.products" :key="item.id"
+                                class="group relative flex flex-col rounded-2xl border border-white/5 overflow-hidden hover:border-orange-700/60 transition-all duration-300"
+                                style="background: rgba(255,255,255,0.02)"
+                            >
+                                <!-- Product image -->
+                                <div class="relative h-44 w-full overflow-hidden bg-gradient-to-br from-orange-950 to-red-950 shrink-0">
+                                    <img
+                                        v-if="item.image"
+                                        :src="item.image"
+                                        :alt="item.name"
+                                        class="h-full w-full object-cover group-hover:scale-105 transition-transform duration-500"
+                                    />
+                                    <div v-else class="h-full w-full flex items-center justify-center">
+                                        <span class="text-6xl select-none opacity-60">🍔</span>
+                                    </div>
+                                    <!-- price badge overlay -->
+                                    <div class="absolute bottom-3 right-3 bg-orange-500 text-black font-black text-sm px-3 py-1 rounded-xl shadow-lg">
+                                        ₱{{ item.price.toFixed(2) }}
+                                    </div>
+                                </div>
+                                <!-- Card body -->
+                                <div class="p-4 flex-1">
+                                    <h3 class="font-bold text-white text-sm leading-snug mb-1.5">{{ item.name }}</h3>
+                                    <p v-if="item.description" class="text-xs text-gray-400 leading-relaxed line-clamp-2">{{ item.description }}</p>
+                                </div>
+                            </div>
                         </div>
                     </div>
-                </div>
+                </template>
 
-                <p class="text-center text-xs text-gray-500 mt-6">All burgers served with your choice of fries or steamed rice.</p>
+                <!-- ── Fallback if no products in DB yet ── -->
+                <template v-else>
+                    <div class="grid sm:grid-cols-2 gap-6">
+                        <div v-for="item in [
+                            { emoji: '🍔', name: 'The Boys Classic Smash', desc: 'Double smash patty, melted cheese, caramelized onions, signature The Boys sauce.' },
+                            { emoji: '🌶️', name: 'Spicy Calamba Burger', desc: 'Flame-grilled patty with jalapeños, sriracha aioli, and pepper jack cheese.' },
+                            { emoji: '🐓', name: 'Grilled Chicken Burger', desc: 'Juicy marinated chicken thigh fillet, fresh lettuce, tomato, and garlic mayo.' },
+                            { emoji: '🥩', name: 'BBQ Bacon Smash', desc: 'Smash patty topped with crispy bacon strips, BBQ glaze, and cheddar cheese.' },
+                        ]" :key="item.name"
+                            class="flex gap-5 items-start rounded-2xl border border-white/5 p-5"
+                            style="background: rgba(255,255,255,0.02)">
+                            <div class="shrink-0 w-16 h-16 rounded-xl bg-gradient-to-br from-orange-900 to-red-950 border border-orange-800/40 flex items-center justify-center text-3xl">
+                                {{ item.emoji }}
+                            </div>
+                            <div>
+                                <h3 class="font-bold text-white text-sm mb-1">{{ item.name }}</h3>
+                                <p class="text-xs text-gray-400 leading-relaxed">{{ item.desc }}</p>
+                            </div>
+                        </div>
+                    </div>
+                </template>
             </div>
         </section>
 
