@@ -54,6 +54,17 @@ const logoUrl = computed(() => (page.props as any).logoUrl as string | null)
 
 const mobileMenuOpen = ref(false)
 
+// ── Product detail modal ──────────────────────────────────────────────────────
+interface SelectedProduct extends ProductCard { categoryName: string }
+const selectedProduct = ref<SelectedProduct | null>(null)
+
+function openProduct(item: ProductCard, categoryName: string) {
+    selectedProduct.value = { ...item, categoryName }
+}
+function closeProduct() {
+    selectedProduct.value = null
+}
+
 // ── Nav links from CMS sections (hero is hardcoded, skip it) ─────────────────
 const navLinks = computed(() => {
     const links: { label: string; href: string }[] = []
@@ -240,10 +251,10 @@ onMounted(async () => {
         })
     })
 
-    // Menu section header
-    gsap.from('.menu-header', {
-        scrollTrigger: { trigger: '.menu-header', start: 'top 88%', once: true },
-        y: 25, autoAlpha: 0, duration: 0.7, ease: 'power2.out', clearProps: 'all',
+    // Menu section banner — only animate y/scale, never hide with autoAlpha
+    gsap.from('.menu-section-banner', {
+        scrollTrigger: { trigger: '.menu-section-banner', start: 'top 92%', once: true },
+        y: 30, scale: 0.98, duration: 0.8, ease: 'power2.out', clearProps: 'all',
     })
 
     /* ── 5. PROMOS — SCROLL TRIGGERED ───────────────────────────────────── */
@@ -503,15 +514,38 @@ onMounted(async () => {
              Cards get class .menu-card; category wrapper gets .menu-category-group.
              GSAP ScrollTrigger staggers cards per group on scroll.
         ═══════════════════════════════════════════════════════════════════ -->
-        <section id="menu" class="py-24 px-6">
-            <div class="max-w-6xl mx-auto">
-
-                <!-- Section header -->
-                <div class="menu-header text-center mb-16" style="will-change: transform, opacity;">
-                    <p class="text-orange-500 text-[11px] font-bold uppercase tracking-[0.2em] mb-3">Hot Off The Grill</p>
-                    <h2 class="text-4xl sm:text-5xl font-black">Our Menu</h2>
-                    <div class="mt-4 w-12 h-0.5 bg-orange-500/50 mx-auto rounded-full"></div>
+        <!-- ── OUR MENU — CINEMATIC SECTION BANNER ─────────────────────────────
+             Always visible (no autoAlpha). GSAP only animates y/scale on scroll.
+        ──────────────────────────────────────────────────────────────────────── -->
+        <div class="menu-section-banner relative overflow-hidden border-y border-orange-900/30 bg-[#0d0300]">
+            <!-- Fire glow behind text -->
+            <div class="absolute inset-0 pointer-events-none"
+                style="background: radial-gradient(ellipse 70% 120% at 50% 100%, rgba(249,115,22,.18) 0%, transparent 70%);">
+            </div>
+            <!-- Scanline texture -->
+            <div class="absolute inset-0 opacity-[0.03] pointer-events-none"
+                style="background: repeating-linear-gradient(0deg,rgba(255,255,255,.2) 0px,rgba(255,255,255,.2) 1px,transparent 1px,transparent 3px);">
+            </div>
+            <div class="relative z-10 text-center py-14 px-6">
+                <p class="text-orange-500 text-[11px] font-bold uppercase tracking-[0.3em] mb-4">
+                    Hot Off The Grill
+                </p>
+                <h2 class="text-5xl sm:text-6xl md:text-7xl font-black uppercase tracking-tight"
+                    style="background: linear-gradient(180deg, #ffffff 40%, rgba(249,115,22,.7) 100%);
+                           -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+                           background-clip: text;">
+                    Our Menu
+                </h2>
+                <div class="mt-5 flex items-center justify-center gap-3">
+                    <div class="h-px w-16 bg-gradient-to-r from-transparent to-orange-500/60"></div>
+                    <span class="text-orange-500/50 text-xs">🔥</span>
+                    <div class="h-px w-16 bg-gradient-to-l from-transparent to-orange-500/60"></div>
                 </div>
+            </div>
+        </div>
+
+        <section id="menu" class="py-16 px-6">
+            <div class="max-w-6xl mx-auto">
 
                 <!-- Category groups -->
                 <div
@@ -520,24 +554,26 @@ onMounted(async () => {
                 >
                     <!-- Category label -->
                     <div class="flex items-center gap-4 mb-6">
-                        <span class="text-orange-500/80 text-[11px] font-bold uppercase tracking-[0.18em]">
+                        <span class="text-orange-500/80 text-[11px] font-bold uppercase tracking-[0.18em] shrink-0">
                             {{ cat.name }}
                         </span>
                         <div class="flex-1 h-px bg-gradient-to-r from-orange-900/50 to-transparent"></div>
                     </div>
 
-                    <!-- Cards grid -->
+                    <!-- Cards grid — click opens detail modal -->
                     <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
-                        <div
+                        <button
                             v-for="item in cat.products" :key="item.id"
+                            type="button"
                             class="menu-card group relative flex flex-col rounded-2xl border border-white/8
-                                   bg-white/[0.03] overflow-hidden
-                                   hover:border-orange-700/50 hover:bg-orange-950/15
-                                   transition-all duration-350"
+                                   bg-white/[0.03] overflow-hidden text-left
+                                   hover:border-orange-600/60 hover:bg-orange-950/20
+                                   active:scale-[0.98] transition-all duration-300 cursor-pointer"
                             style="will-change: transform, opacity;"
+                            @click="openProduct(item, cat.name)"
                         >
                             <!-- Image -->
-                            <div class="relative h-48 overflow-hidden bg-black/40 shrink-0">
+                            <div class="relative h-48 overflow-hidden bg-black/40 shrink-0 w-full">
                                 <img
                                     v-if="item.image"
                                     :src="item.image"
@@ -548,7 +584,6 @@ onMounted(async () => {
                                 <div v-else class="h-full w-full flex items-center justify-center">
                                     <span class="text-5xl opacity-25 select-none">🍔</span>
                                 </div>
-
                                 <!-- Price badge -->
                                 <div class="absolute bottom-3 right-3 bg-orange-500 text-black font-black text-sm px-3 py-1 rounded-xl shadow-lg shadow-orange-500/30">
                                     ₱{{ item.price.toFixed(2) }}
@@ -562,8 +597,11 @@ onMounted(async () => {
                                     class="text-xs text-gray-500 leading-relaxed line-clamp-2 flex-1">
                                     {{ item.description }}
                                 </p>
+                                <p class="text-[11px] text-orange-500/60 font-semibold mt-3 tracking-wide">
+                                    Tap to view details →
+                                </p>
                             </div>
-                        </div>
+                        </button>
                     </div>
                 </div>
 
@@ -585,6 +623,101 @@ onMounted(async () => {
             style="will-change: transform, opacity;"
             v-html="s.content ?? ''">
         </div>
+
+        <!-- ═══════════════════════════════════════════════════════════════════
+             PRODUCT DETAIL MODAL
+        ═══════════════════════════════════════════════════════════════════ -->
+        <Teleport to="body">
+            <Transition
+                enter-active-class="transition duration-250 ease-out"
+                enter-from-class="opacity-0"
+                enter-to-class="opacity-100"
+                leave-active-class="transition duration-200 ease-in"
+                leave-from-class="opacity-100"
+                leave-to-class="opacity-0"
+            >
+                <div v-if="selectedProduct"
+                    class="fixed inset-0 z-[80] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/75 backdrop-blur-sm"
+                    @click.self="closeProduct">
+
+                    <Transition
+                        enter-active-class="transition duration-300 ease-out"
+                        enter-from-class="translate-y-full sm:translate-y-4 sm:scale-95 opacity-0"
+                        enter-to-class="translate-y-0 sm:scale-100 opacity-100"
+                        leave-active-class="transition duration-200 ease-in"
+                        leave-from-class="translate-y-0 sm:scale-100 opacity-100"
+                        leave-to-class="translate-y-full sm:translate-y-4 sm:scale-95 opacity-0"
+                    >
+                        <div v-if="selectedProduct"
+                            class="relative w-full sm:max-w-md rounded-t-3xl sm:rounded-2xl overflow-hidden
+                                   bg-[#0f0502] border border-orange-900/40 shadow-2xl shadow-black/60">
+
+                            <!-- Close button -->
+                            <button @click="closeProduct"
+                                class="absolute top-4 right-4 z-10 rounded-full bg-black/50 p-1.5
+                                       text-gray-400 hover:text-white hover:bg-black/80 transition">
+                                <X class="h-4 w-4" />
+                            </button>
+
+                            <!-- Product image -->
+                            <div class="relative h-56 sm:h-64 w-full overflow-hidden bg-black/60">
+                                <img
+                                    v-if="selectedProduct.image"
+                                    :src="selectedProduct.image"
+                                    :alt="selectedProduct.name"
+                                    class="h-full w-full object-cover"
+                                />
+                                <div v-else class="h-full w-full flex items-center justify-center bg-orange-950/30">
+                                    <span class="text-7xl opacity-30 select-none">🍔</span>
+                                </div>
+                                <!-- Gradient fade into card body -->
+                                <div class="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-[#0f0502] to-transparent"></div>
+                            </div>
+
+                            <!-- Content -->
+                            <div class="px-6 pb-8 pt-4">
+                                <!-- Category badge -->
+                                <span class="inline-block rounded-full border border-orange-700/40 bg-orange-950/50
+                                             px-3 py-0.5 text-[10px] font-bold uppercase tracking-widest text-orange-400 mb-3">
+                                    {{ selectedProduct.categoryName }}
+                                </span>
+
+                                <!-- Name -->
+                                <h2 class="text-2xl sm:text-3xl font-black text-white leading-tight mb-3">
+                                    {{ selectedProduct.name }}
+                                </h2>
+
+                                <!-- Description -->
+                                <p v-if="selectedProduct.description"
+                                    class="text-sm text-gray-400 leading-relaxed mb-6">
+                                    {{ selectedProduct.description }}
+                                </p>
+                                <p v-else class="text-sm text-gray-600 italic mb-6">No description available.</p>
+
+                                <!-- Price — the only financial info visible to visitors -->
+                                <div class="flex items-baseline gap-2 mb-6">
+                                    <span class="text-4xl font-black text-orange-500">
+                                        ₱{{ selectedProduct.price.toFixed(2) }}
+                                    </span>
+                                    <span class="text-xs text-gray-600 uppercase tracking-widest">per order</span>
+                                </div>
+
+                                <!-- Divider -->
+                                <div class="h-px bg-orange-900/30 mb-6"></div>
+
+                                <!-- Close CTA -->
+                                <button @click="closeProduct"
+                                    class="w-full rounded-xl bg-orange-500 hover:bg-orange-400 active:bg-orange-600
+                                           py-3.5 text-sm font-black text-black uppercase tracking-widest
+                                           transition-colors shadow-lg shadow-orange-500/20">
+                                    Back to Menu
+                                </button>
+                            </div>
+                        </div>
+                    </Transition>
+                </div>
+            </Transition>
+        </Teleport>
 
         <!-- ═══════════════════════════════════════════════════════════════════
              FOOTER
