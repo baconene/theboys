@@ -1,7 +1,6 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
-use Laravel\Fortify\Features;
 use App\Http\Controllers\MenuController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\PosController;
@@ -14,10 +13,9 @@ use App\Http\Controllers\BillsPageController;
 use App\Http\Controllers\OrderDetailPageController;
 use App\Http\Controllers\HrisPageController;
 use App\Http\Controllers\ParcelPageController;
+use App\Http\Controllers\WelcomeController;
 
-Route::inertia('/', 'Welcome', [
-    'canRegister' => Features::enabled(Features::registration()),
-])->name('home');
+Route::get('/', [WelcomeController::class, 'index'])->name('home');
 
 Route::get('menu/{id}', [MenuController::class, 'show'])
     ->where('id', '[0-9]+')

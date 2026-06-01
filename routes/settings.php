@@ -1,10 +1,12 @@
 <?php
 
+use App\Http\Controllers\Settings\AdvertisementController;
+use App\Http\Controllers\Settings\LogoController;
+use App\Http\Controllers\Settings\PriceManagementController;
 use App\Http\Controllers\Settings\ProfileController;
 use App\Http\Controllers\Settings\SecurityController;
-use App\Http\Controllers\Settings\UserManagementController;
-use App\Http\Controllers\Settings\LogoController;
 use App\Http\Controllers\Settings\SystemController;
+use App\Http\Controllers\Settings\UserManagementController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware(['auth'])->group(function () {
@@ -51,6 +53,31 @@ Route::middleware(['auth'])->group(function () {
         ->middleware('role:admin');
     Route::delete('settings/logo', [LogoController::class, 'destroy'])
         ->name('settings.logo.destroy')
+        ->middleware('role:admin');
+
+    // Price management (admin only)
+    Route::get('settings/prices', [PriceManagementController::class, 'index'])
+        ->name('settings.prices')
+        ->middleware('role:admin');
+    Route::patch('settings/prices', [PriceManagementController::class, 'update'])
+        ->name('settings.prices.update')
+        ->middleware('role:admin');
+
+    // Advertisements (admin only)
+    Route::get('settings/advertisements', [AdvertisementController::class, 'index'])
+        ->name('settings.advertisements')
+        ->middleware('role:admin');
+    Route::post('settings/advertisements', [AdvertisementController::class, 'store'])
+        ->name('settings.advertisements.store')
+        ->middleware('role:admin');
+    Route::patch('settings/advertisements/{advertisement}', [AdvertisementController::class, 'update'])
+        ->name('settings.advertisements.update')
+        ->middleware('role:admin');
+    Route::delete('settings/advertisements/{advertisement}', [AdvertisementController::class, 'destroy'])
+        ->name('settings.advertisements.destroy')
+        ->middleware('role:admin');
+    Route::post('settings/advertisements/{advertisement}/toggle', [AdvertisementController::class, 'toggle'])
+        ->name('settings.advertisements.toggle')
         ->middleware('role:admin');
 });
 
