@@ -3,7 +3,7 @@ import { ref, computed } from 'vue'
 import { Head, router } from '@inertiajs/vue3'
 import { toast } from 'vue-sonner'
 import {
-    LayoutTemplate, GripVertical, Eye, EyeOff, Pencil, X, Save,
+    LayoutTemplate, GripVertical, Eye, EyeOff, Pencil, Trash2, Plus, X, Save,
     Image as ImageIcon, ExternalLink,
 } from 'lucide-vue-next'
 
@@ -37,32 +37,50 @@ const localSections = ref([...props.sections].sort((a, b) => {
 const beforeSections = computed(() => localSections.value.filter(s => s.position === 'before_products'))
 const afterSections  = computed(() => localSections.value.filter(s => s.position === 'after_products'))
 
-// ── Editing state ──────────────────────────────────────────────────────────────
-const editing = ref<Section | null>(null)
-const form    = ref({ label: '', content: '', position: 'before_products' as Section['position'], is_active: true, display_order: 0 })
-const saving  = ref(false)
-const tab     = ref<'code' | 'preview'>('code')
+// ── Modal state ────────────────────────────────────────────────────────────────
+const editing   = ref<Section | null>(null)
+const creating  = ref(false)
+const form      = ref({ label: '', content: '', position: 'before_products' as Section['position'], is_active: true, display_order: 0 })
+const saving    = ref(false)
+const tab       = ref<'code' | 'preview'>('code')
 
-function openEdit(s: Section) {
-    editing.value = s
-    form.value    = { label: s.label, content: s.content ?? '', position: s.position, is_active: s.is_active, display_order: s.display_order }
-    tab.value     = 'code'
+const modalOpen = computed(() => editing.value !== null || creating.value)
+
+function openCreate() {
+    creating.value = true
+    editing.value  = null
+    form.value     = { label: '', content: '', position: 'before_products', is_active: true, display_order: 0 }
+    tab.value      = 'code'
 }
 
-function closeEdit() { editing.value = null }
+function openEdit(s: Section) {
+    editing.value  = s
+    creating.value = false
+    form.value     = { label: s.label, content: s.content ?? '', position: s.position, is_active: s.is_active, display_order: s.display_order }
+    tab.value      = 'code'
+}
+
+function closeModal() { editing.value = null; creating.value = false }
 
 function save() {
-    if (!editing.value) return
     saving.value = true
-    router.patch(`/settings/page-content/${editing.value.id}`, {
-        ...form.value,
-        is_active: form.value.is_active ? 1 : 0,
-    }, {
-        preserveScroll: true,
-        onSuccess: () => { toast.success('Section saved.'); closeEdit() },
-        onError: (e) => toast.error(Object.values(e)[0] as string ?? 'Save failed'),
-        onFinish: () => { saving.value = false },
-    })
+    const payload = { ...form.value, is_active: form.value.is_active ? 1 : 0 }
+
+    if (creating.value) {
+        router.post('/settings/page-content', payload, {
+            preserveScroll: true,
+            onSuccess: () => { toast.success('Section created.'); closeModal() },
+            onError: (e) => toast.error(Object.values(e)[0] as string ?? 'Create failed'),
+            onFinish: () => { saving.value = false },
+        })
+    } else if (editing.value) {
+        router.patch(`/settings/page-content/${editing.value.id}`, payload, {
+            preserveScroll: true,
+            onSuccess: () => { toast.success('Section saved.'); closeModal() },
+            onError: (e) => toast.error(Object.values(e)[0] as string ?? 'Save failed'),
+            onFinish: () => { saving.value = false },
+        })
+    }
 }
 
 function toggle(s: Section) {
@@ -70,6 +88,15 @@ function toggle(s: Section) {
         preserveScroll: true,
         onSuccess: () => toast.success(s.is_active ? 'Section hidden.' : 'Section shown.'),
         onError: () => toast.error('Failed to toggle.'),
+    })
+}
+
+function remove(s: Section) {
+    if (!confirm(`Delete section "${s.label}"? This cannot be undone.`)) return
+    router.delete(`/settings/page-content/${s.id}`, {
+        preserveScroll: true,
+        onSuccess: () => toast.success('Section deleted.'),
+        onError: () => toast.error('Failed to delete.'),
     })
 }
 
@@ -138,10 +165,16 @@ function insertMediaUrl(url: string) {
                     Edit each section's HTML. Drag rows to reorder. Eye toggles visibility.
                 </p>
             </div>
-            <a href="/" target="_blank"
-                class="flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium hover:bg-muted shrink-0">
-                <ExternalLink class="h-3.5 w-3.5" /> Preview Site
-            </a>
+            <div class="flex items-center gap-2 shrink-0">
+                <a href="/" target="_blank"
+                    class="flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium hover:bg-muted">
+                    <ExternalLink class="h-3.5 w-3.5" /> Preview Site
+                </a>
+                <button @click="openCreate"
+                    class="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90">
+                    <Plus class="h-4 w-4" /> New Section
+                </button>
+            </div>
         </div>
 
         <!-- ── Before-product sections ─────────────────────────────────────── -->
@@ -195,6 +228,11 @@ function insertMediaUrl(url: string) {
                 <button @click="openEdit(s)" title="Edit HTML"
                     class="rounded-lg p-1.5 hover:bg-muted text-muted-foreground hover:text-foreground shrink-0">
                     <Pencil class="h-4 w-4" />
+                </button>
+
+                <button @click="remove(s)" title="Delete section"
+                    class="rounded-lg p-1.5 hover:bg-red-50 dark:hover:bg-red-950/20 text-muted-foreground hover:text-red-600 shrink-0">
+                    <Trash2 class="h-4 w-4" />
                 </button>
             </div>
         </div>
@@ -263,23 +301,32 @@ function insertMediaUrl(url: string) {
                     class="rounded-lg p-1.5 hover:bg-muted text-muted-foreground hover:text-foreground shrink-0">
                     <Pencil class="h-4 w-4" />
                 </button>
+
+                <button @click="remove(s)" title="Delete section"
+                    class="rounded-lg p-1.5 hover:bg-red-50 dark:hover:bg-red-950/20 text-muted-foreground hover:text-red-600 shrink-0">
+                    <Trash2 class="h-4 w-4" />
+                </button>
             </div>
         </div>
     </div>
 
     <!-- ── Full-screen HTML editor ────────────────────────────────────────── -->
     <Teleport to="body">
-        <div v-if="editing" class="fixed inset-0 z-50 flex flex-col bg-background">
+        <div v-if="modalOpen" class="fixed inset-0 z-50 flex flex-col bg-background">
 
             <!-- Header bar -->
             <div class="flex items-center justify-between border-b px-5 py-3 shrink-0">
                 <div class="flex items-center gap-3">
-                    <button @click="closeEdit" class="rounded-lg p-1.5 hover:bg-muted">
+                    <button @click="closeModal" class="rounded-lg p-1.5 hover:bg-muted">
                         <X class="h-4 w-4" />
                     </button>
                     <div>
-                        <p class="font-bold text-sm">{{ editing.label }}</p>
-                        <p class="text-xs text-muted-foreground font-mono">{{ editing.key }}</p>
+                        <p class="font-bold text-sm">
+                            {{ creating ? 'New Section' : editing?.label }}
+                        </p>
+                        <p class="text-xs text-muted-foreground font-mono">
+                            {{ creating ? 'key auto-generated from label' : editing?.key }}
+                        </p>
                     </div>
                 </div>
                 <div class="flex items-center gap-2">
@@ -290,7 +337,7 @@ function insertMediaUrl(url: string) {
                     <button @click="save" :disabled="saving"
                         class="flex items-center gap-1.5 rounded-lg bg-primary px-4 py-1.5 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-40">
                         <Save class="h-3.5 w-3.5" />
-                        {{ saving ? 'Saving…' : 'Save Section' }}
+                        {{ saving ? 'Saving…' : (creating ? 'Create Section' : 'Save Changes') }}
                     </button>
                 </div>
             </div>

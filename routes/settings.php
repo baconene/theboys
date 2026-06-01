@@ -86,8 +86,14 @@ Route::middleware(['auth'])->group(function () {
     Route::get('settings/page-content', [PageContentController::class, 'index'])
         ->name('settings.page-content')
         ->middleware('role:admin');
+    Route::post('settings/page-content', [PageContentController::class, 'store'])
+        ->name('settings.page-content.store')
+        ->middleware('role:admin');
     Route::patch('settings/page-content/{section}', [PageContentController::class, 'update'])
         ->name('settings.page-content.update')
+        ->middleware('role:admin');
+    Route::delete('settings/page-content/{section}', [PageContentController::class, 'destroy'])
+        ->name('settings.page-content.destroy')
         ->middleware('role:admin');
     Route::post('settings/page-content/reorder', [PageContentController::class, 'reorder'])
         ->name('settings.page-content.reorder')
