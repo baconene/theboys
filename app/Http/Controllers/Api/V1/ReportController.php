@@ -98,10 +98,15 @@ class ReportController extends Controller
 
         $year = (int) request()->input('year', Carbon::now()->year);
 
+        // Exclude COGS entries (captured by order_items) and Inventory Stock In
+        // (asset purchase, not an operating expense) to prevent double-counting.
         $rows = \App\Models\FinancialTransaction::selectRaw(
             "DATE_FORMAT(transacted_at, '%Y-%m') as month,
              SUM(CASE WHEN type IN ('payment','income_adjustment') THEN amount ELSE 0 END) as income,
-             SUM(CASE WHEN type IN ('expense','payroll')           THEN amount ELSE 0 END) as expense"
+             SUM(CASE WHEN type IN ('expense','payroll')
+                      AND description NOT LIKE 'COGS:%'
+                      AND description NOT LIKE 'Inventory Stock In%'
+                 THEN amount ELSE 0 END) as expense"
         )
             ->where('type', '!=', 'order')
             ->whereYear('transacted_at', $year)
@@ -135,7 +140,10 @@ class ReportController extends Controller
         $rows = \App\Models\FinancialTransaction::selectRaw(
             "DATE(transacted_at) as date,
              SUM(CASE WHEN type IN ('payment','income_adjustment') THEN amount ELSE 0 END) as income,
-             SUM(CASE WHEN type IN ('expense','payroll')           THEN amount ELSE 0 END) as expense"
+             SUM(CASE WHEN type IN ('expense','payroll')
+                      AND description NOT LIKE 'COGS:%'
+                      AND description NOT LIKE 'Inventory Stock In%'
+                 THEN amount ELSE 0 END) as expense"
         )
             ->where('type', '!=', 'order')
             ->whereBetween('transacted_at', [$start, $end])

@@ -90,29 +90,52 @@ class ReportService
         $grossProfit  = $netRevenue - $deductedCogs;
         $grossMargin  = $netRevenue > 0 ? round(($grossProfit / $netRevenue) * 100, 2) : 0;
 
-        // Operating expenses (exclude COGS entries when includeCogs is false)
-        $expenseQuery = \App\Models\FinancialTransaction::where('type', 'expense')
-            ->whereBetween('transacted_at', [$start->startOfDay(), $end->copy()->endOfDay()]);
-        
-        if (!$includeCogs) {
-            $expenseQuery->where('description', 'not like', 'COGS:%');
-        }
-        
-        $expenseRows = $expenseQuery->selectRaw('COALESCE(SUM(amount), 0) as total, COUNT(*) as count')
-            ->first();
+        // ── Operating expenses ────────────────────────────────────────────────
+        // Rules:
+        //   • Always exclude "COGS: ..." entries — these duplicate the order_items
+        //     cost_subtotal calculation already deducted in $deductedCogs above.
+        //   • When COGS is ON  → also exclude "Inventory Stock In: ..." entries.
+        //     Restocking is an asset purchase (Cash → Inventory). Its consumption is
+        //     captured by COGS when goods are sold. Including it here double-counts.
+        //   • When COGS is OFF → keep "Inventory Stock In: ..." as the cost proxy
+        //     (cash-basis view of costs since COGS is not tracked).
+        $expenseBase = \App\Models\FinancialTransaction::where('type', 'expense')
+            ->whereBetween('transacted_at', [$start->startOfDay(), $end->copy()->endOfDay()])
+            ->where('description', 'not like', 'COGS:%');   // always strip — never double-count
 
+        if ($includeCogs) {
+            // Restock cost flows through COGS; remove it from opex to avoid double-entry
+            $expenseBase->where('description', 'not like', 'Inventory Stock In%');
+        }
+
+        $expenseRows   = (clone $expenseBase)->selectRaw('COALESCE(SUM(amount), 0) as total, COUNT(*) as count')->first();
         $totalExpenses = (float) ($expenseRows->total ?? 0);
         $expenseCount  = (int)   ($expenseRows->count ?? 0);
 
-        // Expense breakdown (exclude COGS entries when includeCogs is false)
-        $expenseBreakdownQuery = \App\Models\FinancialTransaction::where('type', 'expense')
-            ->whereBetween('transacted_at', [$start->startOfDay(), $end->copy()->endOfDay()]);
-        
-        if (!$includeCogs) {
-            $expenseBreakdownQuery->where('description', 'not like', 'COGS:%');
-        }
-        
-        $expenseBreakdown = $expenseBreakdownQuery
+        $expenseBreakdown = (clone $expenseBase)
+            ->orderByDesc('transacted_at')
+            ->get(['description', 'amount', 'transacted_at'])
+            ->map(fn ($e) => [
+                'description'   => $e->description,
+                'amount'        => (float) $e->amount,
+                'transacted_at' => $e->transacted_at,
+            ]);
+
+        // ── Inventory purchases (separate line, NOT in operating expenses) ────
+        // Always shown for transparency. When COGS is ON these are asset movements
+        // (Cash → Inventory) that the system neutralises; their cost reappears as
+        // COGS when the goods are sold. When COGS is OFF they appear inside opex.
+        $invPurchaseRows = \App\Models\FinancialTransaction::where('type', 'expense')
+            ->where('description', 'like', 'Inventory Stock In%')
+            ->whereBetween('transacted_at', [$start->startOfDay(), $end->copy()->endOfDay()])
+            ->selectRaw('COALESCE(SUM(amount), 0) as total, COUNT(*) as count')
+            ->first();
+
+        $totalInvPurchases = (float) ($invPurchaseRows->total ?? 0);
+
+        $invPurchaseBreakdown = \App\Models\FinancialTransaction::where('type', 'expense')
+            ->where('description', 'like', 'Inventory Stock In%')
+            ->whereBetween('transacted_at', [$start->startOfDay(), $end->copy()->endOfDay()])
             ->orderByDesc('transacted_at')
             ->get(['description', 'amount', 'transacted_at'])
             ->map(fn ($e) => [
@@ -157,12 +180,11 @@ class ReportService
                 'transacted_at' => $e->transacted_at,
             ]);
 
-        $netProfit = $grossProfit + $totalIncomeAdj - $totalExpenses - $totalPayroll;
+        $netProfit           = $grossProfit + $totalIncomeAdj - $totalExpenses - $totalPayroll;
         $totalRevenuePlusAdj = $netRevenue + $totalIncomeAdj;
-        $netMargin = $totalRevenuePlusAdj > 0 ? round(($netProfit / $totalRevenuePlusAdj) * 100, 2) : 0;
+        $netMargin           = $totalRevenuePlusAdj > 0 ? round(($netProfit / $totalRevenuePlusAdj) * 100, 2) : 0;
 
-        // Flag if COGS data is incomplete (orders exist but all have zero cost)
-        $hasCogs = $cogs > 0;
+        $hasCogs        = $cogs > 0;
         $paidOrderCount = (int) ($revenue->order_count ?? 0);
 
         return [
@@ -192,13 +214,22 @@ class ReportService
                 'count'     => $expenseCount,
                 'breakdown' => $expenseBreakdown,
             ],
+            // Inventory purchases are shown separately.
+            // When COGS is ON : these are asset movements (not opex); cost flows via COGS.
+            // When COGS is OFF: these are already included inside 'expenses' above.
+            'inventory_purchases' => [
+                'total'               => $totalInvPurchases,
+                'count'               => (int) ($invPurchaseRows->count ?? 0),
+                'included_in_expenses' => ! $includeCogs,  // tells the UI where they appear
+                'breakdown'           => $invPurchaseBreakdown,
+            ],
             'payroll' => [
                 'total'     => $totalPayroll,
                 'count'     => (int) ($payrollRows->count ?? 0),
                 'breakdown' => $payrollBreakdown,
             ],
-            'net_profit' => $netProfit,
-            'net_margin' => $netMargin,
+            'net_profit'   => $netProfit,
+            'net_margin'   => $netMargin,
             'include_cogs' => $includeCogs,
         ];
     }

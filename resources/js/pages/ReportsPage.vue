@@ -120,6 +120,7 @@ interface PL {
     gross_profit: number; gross_margin: number
     income_adjustments: { total: number; count: number; breakdown: PLBreakdownItem[] }
     expenses: { total: number; count: number; breakdown: PLBreakdownItem[] }
+    inventory_purchases: { total: number; count: number; included_in_expenses: boolean; breakdown: PLBreakdownItem[] }
     payroll: { total: number; count: number; breakdown: PLBreakdownItem[] }
     net_profit: number; net_margin: number
     include_cogs?: boolean
@@ -851,7 +852,10 @@ onMounted(async () => {
                         <input v-model="plEndDate" type="date" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
                     <div class="flex items-center gap-2">
                         <input v-model="plIncludeCogs" type="checkbox" id="pl_cogs_toggle" class="rounded border-gray-300" />
-                        <label for="pl_cogs_toggle" class="text-xs font-medium text-muted-foreground">Include COGS in expenses</label>
+                        <label for="pl_cogs_toggle" class="text-xs font-medium text-muted-foreground">
+                            Include COGS
+                            <span class="opacity-60 font-normal">— when ON: restocking is an asset (not opex); consumed cost flows via COGS</span>
+                        </label>
                     </div>
                 </template>
 
@@ -1335,6 +1339,43 @@ onMounted(async () => {
                             </div>
                         </div>
 
+                        <!-- Inventory Purchases (always shown for transparency) -->
+                        <div v-if="(plReport.inventory_purchases?.total ?? 0) > 0" class="px-5 py-4 space-y-2 bg-amber-50/40 dark:bg-amber-950/10">
+                            <div class="flex items-start justify-between gap-2">
+                                <p class="text-xs font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400">
+                                    Inventory Purchases ({{ plReport.inventory_purchases.count }})
+                                </p>
+                                <span :class="[
+                                    'shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full',
+                                    plReport.inventory_purchases.included_in_expenses
+                                        ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                                        : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+                                ]">
+                                    {{ plReport.inventory_purchases.included_in_expenses ? 'In Operating Expenses' : 'Asset — excluded from opex' }}
+                                </span>
+                            </div>
+                            <p class="text-[11px] text-muted-foreground leading-relaxed">
+                                <template v-if="plReport.inventory_purchases.included_in_expenses">
+                                    COGS is OFF — restock cost counted as operating expense (cash-basis view).
+                                </template>
+                                <template v-else>
+                                    COGS is ON — restock moves Cash → Inventory (asset). Consumed cost is captured above by COGS,
+                                    so this is <strong>excluded from operating expenses</strong> to prevent double-counting.
+                                </template>
+                            </p>
+                            <div v-if="plReport.inventory_purchases.breakdown.length" class="space-y-1">
+                                <div v-for="inv in plReport.inventory_purchases.breakdown" :key="inv.transacted_at + inv.description"
+                                    class="flex justify-between text-xs text-muted-foreground pl-2">
+                                    <span class="truncate max-w-xs">{{ inv.description }} <span class="opacity-60">— {{ inv.transacted_at?.slice(0, 10) }}</span></span>
+                                    <span class="shrink-0 ml-4 text-amber-600">{{ plReport.inventory_purchases.included_in_expenses ? '−' : '' }}{{ fmt(inv.amount) }}</span>
+                                </div>
+                            </div>
+                            <div class="flex justify-between text-sm font-semibold border-t pt-2 border-amber-200 dark:border-amber-800">
+                                <span class="text-amber-700 dark:text-amber-400">Total Inventory Purchases</span>
+                                <span class="text-amber-700 dark:text-amber-400">{{ fmt(plReport.inventory_purchases.total) }}</span>
+                            </div>
+                        </div>
+
                         <!-- Other Income (income adjustments) -->
                         <div v-if="(plReport.income_adjustments?.total ?? 0) > 0" class="px-5 py-4 space-y-2">
                             <p class="text-xs font-bold uppercase tracking-wider text-muted-foreground">Other Income / Credit Adjustments ({{ plReport.income_adjustments.count }})</p>
@@ -1353,7 +1394,14 @@ onMounted(async () => {
 
                         <!-- Operating Expenses -->
                         <div class="px-5 py-4 space-y-2">
-                            <p class="text-xs font-bold uppercase tracking-wider text-muted-foreground">Operating Expenses ({{ plReport.expenses.count }})</p>
+                            <div class="flex items-center gap-2">
+                                <p class="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                                    Operating Expenses ({{ plReport.expenses.count }})
+                                </p>
+                                <span v-if="plIncludeCogs" class="text-[10px] text-muted-foreground font-normal opacity-60">
+                                    COGS &amp; restock excluded
+                                </span>
+                            </div>
                             <div v-if="plReport.expenses.breakdown.length > 0" class="space-y-1">
                                 <div v-for="exp in plReport.expenses.breakdown" :key="exp.transacted_at + exp.description"
                                     class="flex justify-between text-xs text-muted-foreground pl-2">
