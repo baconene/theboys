@@ -62,7 +62,7 @@ const props = defineProps<{
 }>()
 
 // ── Active tab ─────────────────────────────────────────────────────────────────
-type Tab = 'orders' | 'inventory' | 'financial' | 'daily' | 'monthly' | 'products' | 'pl' | 'bills'
+type Tab = 'orders' | 'inventory' | 'financial' | 'daily' | 'monthly' | 'products' | 'pl' | 'bills' | 'heatmap'
 const tab = ref<Tab>('orders')
 const loading = ref(false)
 
@@ -75,6 +75,7 @@ const tabs: { key: Tab; label: string }[] = [
     { key: 'products',  label: 'Product Sales' },
     { key: 'pl',        label: 'P&L' },
     { key: 'bills',     label: 'Bills' },
+    { key: 'heatmap',   label: '🔥 Peak Hours' },
 ]
 
 // ── Daily / Monthly ────────────────────────────────────────────────────────────
@@ -195,6 +196,78 @@ interface MonthChartEntry { month: string; income: number; expense: number }
 const monthChartData      = ref<MonthChartEntry[]>([])
 const monthChartLoading   = ref(false)
 const monthChartCollapsed = ref(false)
+
+// ── Heatmap ───────────────────────────────────────────────────────────────────
+interface HeatmapSlot { day: string; hour: number; orders: number }
+interface HeatmapInsights {
+    total_orders: number
+    peak_slot:   HeatmapSlot
+    peak_hour:   { hour: number; total_orders: number }
+    peak_day:    { day: string;  total_orders: number }
+    hour_totals: number[]
+    day_totals:  Record<string, number>
+}
+interface HeatmapData {
+    data:     HeatmapSlot[]
+    matrix:   Record<string, number[]>
+    insights: HeatmapInsights
+}
+
+const hmDateFrom  = ref(new Date(new Date().setDate(new Date().getDate() - 89)).toISOString().slice(0, 10))
+const hmDateTo    = ref(today)
+const hmData      = ref<HeatmapData | null>(null)
+const hmLoading   = ref(false)
+const hmTooltip   = ref<{ slot: HeatmapSlot; x: number; y: number } | null>(null)
+
+const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+const HOURS = Array.from({ length: 24 }, (_, i) => i)
+
+const hmMax = computed(() => {
+    if (!hmData.value) return 1
+    return Math.max(1, ...hmData.value.data.map(d => d.orders))
+})
+
+// Returns a Tailwind-compatible inline style for the cell background
+function cellStyle(orders: number): string {
+    if (orders === 0) return 'background:#1a1a1a'
+    const ratio = orders / hmMax.value
+    // Interpolate from #431407 (very dark) → #f97316 (orange-500) → #fef08a (yellow-200)
+    if (ratio < 0.25)  return `background:rgba(249,115,22,${0.15 + ratio * 0.6})`
+    if (ratio < 0.50)  return `background:rgba(249,115,22,${0.30 + ratio * 0.7})`
+    if (ratio < 0.75)  return `background:rgba(234,88,12,${0.55 + ratio * 0.4})`
+    return `background:rgba(220,38,38,${0.70 + ratio * 0.3})`
+}
+
+function cellText(orders: number): string {
+    const ratio = orders / hmMax.value
+    return ratio > 0.4 ? 'text-white' : orders > 0 ? 'text-orange-200' : 'text-zinc-700'
+}
+
+function hmFmtHour(h: number): string {
+    if (h === 0)  return '12a'
+    if (h < 12)   return `${h}a`
+    if (h === 12) return '12p'
+    return `${h - 12}p`
+}
+
+function showTooltip(e: MouseEvent, slot: HeatmapSlot) {
+    const rect = (e.target as HTMLElement).getBoundingClientRect()
+    hmTooltip.value = { slot, x: rect.left + rect.width / 2, y: rect.top - 8 }
+}
+
+const loadHeatmap = async () => {
+    hmLoading.value = true
+    try {
+        const res = await api.get('/api/v1/reports/heatmap', {
+            params: { date_from: hmDateFrom.value, date_to: hmDateTo.value },
+        })
+        hmData.value = res.data
+    } catch (err: any) {
+        toast.error(err.response?.data?.message ?? 'Failed to load heatmap')
+    } finally {
+        hmLoading.value = false
+    }
+}
 
 // ── Financial ─────────────────────────────────────────────────────────────────
 const ftStartDate = ref(thirtyDaysAgo)
@@ -518,6 +591,8 @@ const generateReport = async () => {
         } else if (tab.value === 'bills') {
             await loadBills()
             await loadForecast()
+        } else if (tab.value === 'heatmap') {
+            await loadHeatmap()
         }
     } catch (err: any) {
         toast.error(err.response?.data?.message ?? 'Failed to load report')
@@ -900,6 +975,14 @@ onMounted(async () => {
                     </div>
                 </template>
 
+                <!-- Heatmap date range -->
+                <template v-if="tab === 'heatmap'">
+                    <div><label class="text-xs font-medium text-muted-foreground block mb-1">From</label>
+                        <input v-model="hmDateFrom" type="date" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
+                    <div><label class="text-xs font-medium text-muted-foreground block mb-1">To</label>
+                        <input v-model="hmDateTo" type="date" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
+                </template>
+
                 <!-- Financial date range -->
                 <template v-if="tab === 'financial'">
                     <div><label class="text-xs font-medium text-muted-foreground block mb-1">From</label>
@@ -1005,6 +1088,86 @@ onMounted(async () => {
                         Next <ChevronRight class="h-3.5 w-3.5" />
                     </button>
                 </div>
+            </div>
+        </template>
+
+        <!-- ── Heatmap (Peak Hours) ───────────────────────────────────────── -->
+        <template v-if="tab === 'heatmap'">
+            <div class="rounded-xl border bg-card shadow-sm p-4">
+                <div class="flex items-center justify-between mb-3">
+                    <h2 class="font-bold text-sm flex items-center gap-2">🔥 Peak Hours</h2>
+                    <div class="text-xs text-muted-foreground">Total orders: {{ hmData?.insights?.total_orders ?? 0 }}</div>
+                </div>
+
+                <div v-if="hmLoading" class="py-10 text-center text-muted-foreground">Loading heatmap…</div>
+
+                <div v-else-if="hmData" class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                    <div class="col-span-2">
+                        <div class="overflow-x-auto">
+                            <div class="inline-block min-w-full">
+                                <div class="grid" :style="{ gridTemplateColumns: '120px repeat(24, 40px)' }">
+                                    <!-- header: hour labels -->
+                                    <div class="px-2 py-2 text-xs text-muted-foreground">Day / Hour</div>
+                                    <div v-for="h in 24" :key="h" class="px-1 py-1 text-[10px] text-center text-muted-foreground">{{ hmFmtHour(h - 1) }}</div>
+
+                                    <!-- rows: days -->
+                                    <div v-for="day in DAYS" :key="day" class="contents">
+                                        <div class="px-2 py-1 text-sm font-semibold text-muted-foreground">{{ day }}</div>
+                                        <div v-for="h in 24" :key="day + '-' + h" class="p-1">
+                                            <div
+                                                class="h-8 w-10 rounded-sm flex items-center justify-center text-xs font-semibold cursor-default"
+                                                :style="cellStyle(hmData!.data.find(d => d.day === day && d.hour === (h - 1))?.orders ?? 0)"
+                                                :class="cellText(hmData!.data.find(d => d.day === day && d.hour === (h - 1))?.orders ?? 0)
+                                                    .split(' ')
+                                                    .join(' ')
+                                                "
+                                                @mouseenter="(e) => showTooltip(e, { day, hour: h - 1, orders: hmData!.data.find(d => d.day === day && d.hour === (h - 1))?.orders ?? 0 })"
+                                                @mouseleave="() => hmTooltip = null"
+                                            >
+                                                {{ hmData!.data.find(d => d.day === day && d.hour === (h - 1))?.orders ?? 0 }}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="col-span-1 space-y-3">
+                        <div class="rounded-xl border p-3 bg-muted/20">
+                            <p class="text-xs text-muted-foreground font-semibold">Peak Slot</p>
+                            <div class="mt-2">
+                                <p class="font-bold text-lg">{{ hmData.insights.peak_slot.day }} · {{ hmFmtHour(hmData.insights.peak_slot.hour) }}</p>
+                                <p class="text-sm text-muted-foreground">Orders: <strong>{{ hmData.insights.peak_slot.orders }}</strong></p>
+                            </div>
+                        </div>
+
+                        <div class="rounded-xl border p-3 bg-card">
+                            <p class="text-xs text-muted-foreground font-semibold">Totals</p>
+                            <div class="mt-2 text-sm">
+                                <p>Total orders: <strong>{{ hmData.insights.total_orders }}</strong></p>
+                                <p class="mt-1">Peak day: <strong>{{ hmData.insights.peak_day.day }}</strong> ({{ hmData.insights.peak_day.total_orders }})</p>
+                                <p class="mt-1">Peak hour: <strong>{{ hmData.insights.peak_hour.hour }}</strong> ({{ hmData.insights.peak_hour.total_orders }})</p>
+                            </div>
+                        </div>
+
+                        <div class="rounded-xl border p-3 bg-card">
+                            <p class="text-xs text-muted-foreground font-semibold">Legend</p>
+                            <div class="mt-2 flex flex-col gap-2">
+                                <div class="flex items-center gap-2"><div class="h-3 w-6 rounded-sm bg-orange-500"></div><span class="text-xs text-muted-foreground">High</span></div>
+                                <div class="flex items-center gap-2"><div class="h-3 w-6 rounded-sm bg-amber-400"></div><span class="text-xs text-muted-foreground">Medium</span></div>
+                                <div class="flex items-center gap-2"><div class="h-3 w-6 rounded-sm bg-zinc-800"></div><span class="text-xs text-muted-foreground">Low / None</span></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div v-else class="py-10 text-center text-muted-foreground">No heatmap data for the selected range.</div>
+            </div>
+
+            <!-- Tooltip -->
+            <div v-if="hmTooltip" :style="{ position: 'fixed', left: hmTooltip.x + 'px', top: (hmTooltip.y - 48) + 'px', transform: 'translateX(-50%)' }" class="pointer-events-none z-50">
+                <div class="rounded-md bg-black text-white text-xs px-3 py-1 shadow-lg">{{ hmTooltip.slot.day }} {{ hmFmtHour(hmTooltip.slot.hour) }} — {{ hmTooltip.slot.orders }} orders</div>
             </div>
         </template>
 
