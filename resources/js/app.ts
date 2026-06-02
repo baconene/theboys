@@ -41,4 +41,6 @@ createInertiaApp({
 
 initializeTheme();
 initializeFlashToast();
-initOfflineSync();
+if (typeof window !== 'undefined') {
+    initOfflineSync();
+}

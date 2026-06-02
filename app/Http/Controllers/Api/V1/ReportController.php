@@ -165,6 +165,84 @@ class ReportController extends Controller
         return response()->json($result);
     }
 
+    public function heatmap(): JsonResponse
+    {
+        $this->checkPermission();
+
+        $dateFrom = request()->input('date_from');
+        $dateTo   = request()->input('date_to');
+
+        $query = \App\Models\Order::where('payment_status', 'paid');
+
+        if ($dateFrom) $query->whereDate('created_at', '>=', $dateFrom);
+        if ($dateTo)   $query->whereDate('created_at', '<=', $dateTo);
+
+        // MySQL DAYOFWEEK: 1=Sunday, 2=Monday … 7=Saturday
+        $rows = $query
+            ->selectRaw('DAYOFWEEK(created_at) as dow, HOUR(created_at) as hr, COUNT(*) as orders')
+            ->groupByRaw('DAYOFWEEK(created_at), HOUR(created_at)')
+            ->orderByRaw('DAYOFWEEK(created_at), HOUR(created_at)')
+            ->get();
+
+        // Map MySQL dow → day name (dow 1 = Sunday)
+        $dowMap = [1 => 'Sunday', 2 => 'Monday', 3 => 'Tuesday',
+                   4 => 'Wednesday', 5 => 'Thursday', 6 => 'Friday', 7 => 'Saturday'];
+
+        // Build lookup: dayName → hour → count
+        $lookup = [];
+        foreach ($rows as $row) {
+            $day = $dowMap[$row->dow] ?? 'Unknown';
+            $lookup[$day][(int) $row->hr] = (int) $row->orders;
+        }
+
+        // Always output Mon → Sun order
+        $orderedDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+        $data       = [];
+        $matrix     = [];
+        $dayTotals  = array_fill_keys($orderedDays, 0);
+        $hourTotals = array_fill(0, 24, 0);
+
+        foreach ($orderedDays as $day) {
+            $matrix[$day] = [];
+            for ($h = 0; $h < 24; $h++) {
+                $count = $lookup[$day][$h] ?? 0;
+                $data[]        = ['day' => $day, 'hour' => $h, 'orders' => $count];
+                $matrix[$day][$h] = $count;
+                $dayTotals[$day]  += $count;
+                $hourTotals[$h]   += $count;
+            }
+        }
+
+        // Peak slot (busiest day+hour)
+        $maxOrders = 0;
+        $peakSlot  = ['day' => null, 'hour' => 0, 'orders' => 0];
+        foreach ($data as $slot) {
+            if ($slot['orders'] > $maxOrders) {
+                $maxOrders = $slot['orders'];
+                $peakSlot  = $slot;
+            }
+        }
+
+        $peakHourIdx = (int) array_search(max($hourTotals), $hourTotals);
+        $peakDay     = (string) array_search(max($dayTotals), $dayTotals);
+
+        return response()->json([
+            'xAxis'  => 'hour',
+            'yAxis'  => 'day',
+            'data'   => $data,
+            'matrix' => $matrix,
+            'insights' => [
+                'total_orders' => array_sum($hourTotals),
+                'peak_slot'    => $peakSlot,
+                'peak_hour'    => ['hour' => $peakHourIdx, 'total_orders' => $hourTotals[$peakHourIdx]],
+                'peak_day'     => ['day'  => $peakDay,     'total_orders' => $dayTotals[$peakDay] ?? 0],
+                'hour_totals'  => array_values($hourTotals),
+                'day_totals'   => $dayTotals,
+            ],
+        ]);
+    }
+
     private function checkPermission(): void
     {
         if (! auth()->user()?->hasAnyRole('admin') && ! auth()->user()?->hasPermissionTo('view reports')) {
