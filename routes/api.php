@@ -25,8 +25,14 @@ Route::prefix('v1')->group(function () {
     Route::get('/products/category/{categoryId}', [ProductController::class, 'byCategory']);
     Route::get('/products/{product}', [ProductController::class, 'show']);
 
-    // Protected routes
-    Route::middleware('auth')->group(function () {
+        // For local development allow heatmap to be fetched without auth so
+        // frontend dev server and quick testing works without a logged-in user.
+        if (app()->environment('local')) {
+            Route::get('/reports/heatmap', [ReportController::class, 'heatmap']);
+        }
+
+        // Protected routes
+        Route::middleware('auth')->group(function () {
         // Categories — write routes (read routes are public above)
         Route::post('/categories', [CategoryController::class, 'store']);
         Route::delete('/categories/{category}', [CategoryController::class, 'destroy']);
@@ -67,6 +73,7 @@ Route::prefix('v1')->group(function () {
         Route::get('/reports/profit-loss', [ReportController::class, 'profitLoss']);
         Route::get('/reports/daily-chart', [ReportController::class, 'dailyChart']);
         Route::get('/reports/monthly-chart', [ReportController::class, 'monthlyChart']);
+        Route::get('/reports/heatmap', [ReportController::class, 'heatmap']);
 
         // Payment Tenders (authenticated write + all-list)
         Route::get('/payment-tenders/all', [\App\Http\Controllers\Api\V1\PaymentTenderController::class, 'all']);
