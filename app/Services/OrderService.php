@@ -21,7 +21,7 @@ class OrderService
 
     public function createOrder(array $data): Order
     {
-        return DB::transaction(function () use ($data) {
+        $order = DB::transaction(function () use ($data) {
             $order = Order::create([
                 'user_id' => auth()->id(),
                 'order_type' => $data['order_type'],
@@ -50,11 +50,6 @@ class OrderService
 
             $order->calculateTotals();
 
-            // Queue a Pusher print job for the new order
-            try {
-                $this->printJobService->queueForNewOrder($order->fresh(['items.product', 'user', 'queueNumber']));
-            } catch (\Throwable) { /* non-critical — don't fail the order if printing fails */ }
-
             \App\Models\FinancialTransaction::create([
                 'type'          => 'order',
                 'amount'        => $order->fresh()->total_amount,
@@ -66,6 +61,13 @@ class OrderService
 
             return $order;
         });
+
+        // Queue print job AFTER the transaction commits so the order data is fully persisted
+        try {
+            $this->printJobService->queueForNewOrder($order->fresh(['items.product', 'user', 'queueNumber']));
+        } catch (\Throwable) { /* non-critical — don't fail the order if printing fails */ }
+
+        return $order;
     }
 
     public function addOrderItem(Order $order, array $itemData): OrderItem
