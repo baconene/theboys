@@ -2,107 +2,139 @@
 
 namespace App\Services;
 
+use App\Events\NewReceiptEvent;
 use App\Models\Order;
 use App\Models\PrintJob;
+use App\Models\PrintServiceSetting;
 use Pusher\PushNotifications\PushNotifications;
 
 class PrintJobService
 {
-    private function beamsClient(): PushNotifications
-    {
-        return new PushNotifications([
-            'instanceId' => config('broadcasting.beams.instance_id'),
-            'secretKey'  => config('broadcasting.beams.secret_key'),
-        ]);
-    }
-
     public function queueForNewOrder(Order $order): PrintJob
     {
-        return $this->createAndNotify($order, 'new_order', null);
+        return $this->createAndDeliver($order, 'new_order', null);
     }
 
     public function queueForStatusChange(Order $order, string $newStatus): PrintJob
     {
-        return $this->createAndNotify($order, 'status_change', $newStatus);
+        return $this->createAndDeliver($order, 'status_change', $newStatus);
     }
 
-    private function createAndNotify(Order $order, string $trigger, ?string $triggerStatus): PrintJob
+    private function createAndDeliver(Order $order, string $trigger, ?string $triggerStatus): PrintJob
     {
         $order->loadMissing(['items.product', 'user', 'queueNumber', 'payments.tender']);
+
+        $receiptPayload = $this->buildAndroidReceipt($order);
 
         $job = PrintJob::create([
             'order_id'       => $order->id,
             'trigger'        => $trigger,
             'trigger_status' => $triggerStatus,
             'status'         => 'pending',
-            'receipt_data'   => $this->buildReceiptData($order),
+            'receipt_data'   => $receiptPayload,
         ]);
 
-        try {
-            $this->beamsClient()->publishToInterests(
-                ['print-jobs'],
-                [
-                    'fcm' => [
-                        'notification' => [
-                            'title' => $this->notificationTitle($trigger, $triggerStatus, $order->id),
-                            'body'  => $this->notificationBody($order),
-                        ],
-                        'data' => [
-                            'print_job_id'   => (string) $job->id,
-                            'trigger'        => $trigger,
-                            'trigger_status' => $triggerStatus ?? '',
-                            'receipt'        => json_encode($job->receipt_data),
-                        ],
-                    ],
-                ]
-            );
+        $delivered = false;
 
-            $job->update(['status' => 'sent', 'sent_at' => now(), 'attempts' => 1]);
+        // ── Path 1: Pusher Channels (WebSocket) — primary delivery ──────────────
+        // Android binds to "App\Events\NewReceiptEvent" on "orders" channel.
+        // Channels sends proper JSON objects so the Android's JsonObject.toString() works.
+        try {
+            broadcast(new NewReceiptEvent($receiptPayload));
+            $delivered = true;
         } catch (\Throwable $e) {
-            $job->update(['status' => 'failed', 'failed_reason' => $e->getMessage()]);
+            // Channels not configured or unreachable — fall through to Beams
         }
+
+        // ── Path 2: Pusher Beams (FCM push) — background wake-up ────────────────
+        // Note: FCM data values are strings only, so we can't embed nested JSON here.
+        // We send only a notification (title + body) + print_job_id so the Android
+        // can fetch the receipt from the API if needed.
+        try {
+            $instanceId = config('broadcasting.beams.instance_id');
+            $secretKey  = config('broadcasting.beams.secret_key');
+
+            if ($instanceId && $secretKey) {
+                $beams = new PushNotifications([
+                    'instanceId' => $instanceId,
+                    'secretKey'  => $secretKey,
+                ]);
+
+                $beams->publishToInterests(
+                    ['print-jobs'],
+                    [
+                        'fcm' => [
+                            'notification' => [
+                                'title' => $this->notificationTitle($trigger, $triggerStatus, $order->id),
+                                'body'  => $this->notificationBody($order),
+                            ],
+                            'data' => [
+                                'print_job_id' => (string) $job->id,
+                            ],
+                        ],
+                    ]
+                );
+
+                $delivered = true;
+            }
+        } catch (\Throwable) {
+            // Non-critical
+        }
+
+        $job->update([
+            'status'   => $delivered ? 'sent' : 'failed',
+            'sent_at'  => $delivered ? now() : null,
+            'attempts' => 1,
+            'failed_reason' => $delivered ? null : 'No delivery channel configured (no Pusher Channels key and no Beams credentials)',
+        ]);
 
         return $job;
     }
 
+    private function buildAndroidReceipt(Order $order): array
+    {
+        $settings = PrintServiceSetting::getSetting();
+
+        return [
+            'store' => [
+                'name'    => $settings->print_store_name ?: config('app.name'),
+                'address' => $settings->print_store_address,
+                'phone'   => $settings->print_store_phone,
+                'footer'  => $settings->print_footer ?: 'Thank you!',
+            ],
+            'receipt' => [
+                'number'  => (string) $order->id,
+                'date'    => $order->created_at?->setTimezone('Asia/Manila')->format('M d, Y h:i A'),
+                'cashier' => $order->user?->name,
+            ],
+            'items' => $order->items->map(fn ($item) => [
+                'name'  => $item->product?->name ?? 'Unknown',
+                'qty'   => (float) $item->quantity,
+                'price' => (float) $item->unit_price,
+                'total' => (float) $item->subtotal,
+            ])->values()->all(),
+            'totals' => [
+                'subtotal' => (float) $order->subtotal,
+                'tax'      => (float) $order->tax_amount,
+                'discount' => (float) $order->discount_amount,
+                'total'    => (float) $order->total_amount,
+            ],
+            'payment' => null,
+        ];
+    }
+
     private function notificationTitle(string $trigger, ?string $status, int $orderId): string
     {
-        if ($trigger === 'new_order') return "New Order #$orderId";
-        return "Order #$orderId — " . ucfirst($status ?? 'Updated');
+        return $trigger === 'new_order'
+            ? "New Order #$orderId — Print Required"
+            : "Order #$orderId — " . ucfirst($status ?? 'Updated');
     }
 
     private function notificationBody(Order $order): string
     {
         $itemCount = $order->items->count();
         $total     = number_format((float) $order->total_amount, 2);
-        return "{$itemCount} item(s) · ₱{$total}" . ($order->table_number ? " · Table {$order->table_number}" : '');
-    }
-
-    private function buildReceiptData(Order $order): array
-    {
-        return [
-            'id'               => $order->id,
-            'queue_number'     => $order->queueNumber?->number,
-            'order_type'       => $order->order_type,
-            'table_number'     => $order->table_number,
-            'status'           => $order->status,
-            'payment_status'   => $order->payment_status,
-            'customer_name'    => $order->customer_name,
-            'customer_contact' => $order->customer_contact,
-            'customer_address' => $order->customer_address,
-            'notes'            => $order->notes,
-            'subtotal'         => (float) $order->subtotal,
-            'discount_amount'  => (float) $order->discount_amount,
-            'tax_amount'       => (float) $order->tax_amount,
-            'total_amount'     => (float) $order->total_amount,
-            'items'            => $order->items->map(fn ($item) => [
-                'name'       => $item->product?->name ?? 'Unknown',
-                'quantity'   => $item->quantity,
-                'unit_price' => (float) $item->unit_price,
-                'subtotal'   => (float) $item->subtotal,
-            ])->values()->all(),
-            'cashier'          => $order->user?->name,
-            'created_at'       => $order->created_at?->toISOString(),
-        ];
+        return "{$itemCount} item(s) · ₱{$total}"
+            . ($order->table_number ? " · Table {$order->table_number}" : '');
     }
 }
