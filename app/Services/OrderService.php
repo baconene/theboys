@@ -4,13 +4,18 @@ namespace App\Services;
 
 use App\Models\Order;
 use App\Models\OrderItem;
+use App\Models\PrintServiceSetting;
 use App\Models\QueueNumber;
 use App\Enums\OrderStatus;
+use App\Services\PrintReceiptService;
 use Illuminate\Support\Facades\DB;
 
 class OrderService
 {
-    public function __construct(private InventoryService $inventoryService) {}
+    public function __construct(
+        private InventoryService $inventoryService,
+        private PrintReceiptService $printReceiptService,
+    ) {}
 
     public function createOrder(array $data): Order
     {
@@ -108,6 +113,11 @@ class OrderService
                 $order->load('items');
                 foreach ($order->items as $item) {
                     $this->inventoryService->deductForOrder($item);
+                }
+
+                $printSettings = PrintServiceSetting::getSetting();
+                if ($printSettings->print_enabled && $printSettings->print_auto_print) {
+                    $this->printReceiptService->print($order);
                 }
             }
         }

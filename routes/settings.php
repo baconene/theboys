@@ -4,6 +4,7 @@ use App\Http\Controllers\Settings\ProfileController;
 use App\Http\Controllers\Settings\SecurityController;
 use App\Http\Controllers\Settings\UserManagementController;
 use App\Http\Controllers\Settings\LogoController;
+use App\Http\Controllers\Settings\PrintServiceSettingsController;
 use App\Http\Controllers\Settings\SystemController;
 use Illuminate\Support\Facades\Route;
 
@@ -29,6 +30,11 @@ Route::middleware(['auth'])->group(function () {
         ->middleware('role:admin');
     Route::delete('settings/users/{user}', [UserManagementController::class, 'destroy'])
         ->name('settings.users.destroy')
+        ->middleware('role:admin');
+
+    // Print Service (admin only)
+    Route::get('settings/print-service', [PrintServiceSettingsController::class, 'edit'])
+        ->name('settings.print-service')
         ->middleware('role:admin');
 
     // Logo (admin only)

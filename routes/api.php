@@ -102,6 +102,11 @@ Route::prefix('v1')->group(function () {
         Route::delete('/parcels/{parcel}/items/{item}', [\App\Http\Controllers\Api\V1\ParcelController::class, 'destroyItem']);
         Route::patch('/parcels/{parcel}/items/{item}/toggle', [\App\Http\Controllers\Api\V1\ParcelController::class, 'toggleItem']);
 
+        // Print Service settings
+        Route::get('/print-service/settings', [\App\Http\Controllers\Api\V1\PrintServiceController::class, 'getSettings']);
+        Route::post('/print-service/settings', [\App\Http\Controllers\Api\V1\PrintServiceController::class, 'saveSettings']);
+        Route::post('/print-service/test', [\App\Http\Controllers\Api\V1\PrintServiceController::class, 'testConnection']);
+
         // HRIS — Employees
         Route::get('/hris/employees', [HrisController::class, 'employees']);
         Route::post('/hris/employees', [HrisController::class, 'storeEmployee']);
