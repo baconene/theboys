@@ -20,12 +20,16 @@ class NewReceiptEvent implements ShouldBroadcastNow
         return [new Channel('orders')];
     }
 
-    public function broadcastWith(): array
+    public function broadcastAs(): string
     {
-        // Android's handleIncomingPrint checks for 'receipt' key in the event data,
-        // then calls JsonObject.toString() on it — works because it's a JsonObject (not a string).
-        return ['receipt' => $this->receiptPayload];
+        // Android binds to both "App\Events\NewReceiptEvent" AND "print".
+        // Using "print" avoids any backslash encoding issues across Pusher clients.
+        return 'print';
     }
 
-    // No broadcastAs() — default is "App\Events\NewReceiptEvent" which is what the Android binds to.
+    public function broadcastWith(): array
+    {
+        // Android's handleIncomingPrint checks for 'receipt' key in the event data.
+        return ['receipt' => $this->receiptPayload];
+    }
 }

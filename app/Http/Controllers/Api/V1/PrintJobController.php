@@ -107,11 +107,15 @@ class PrintJobController extends Controller
                 'useTLS'   => true,
             ]);
 
-            $pusher->trigger($data['channel'], 'App\\Events\\NewReceiptEvent', ['receipt' => $payload]);
+            // Send with both event names — Android binds to both
+            $pusher->triggerBatch([
+                ['channel' => $data['channel'], 'name' => 'App\\Events\\NewReceiptEvent', 'data' => ['receipt' => $payload]],
+                ['channel' => $data['channel'], 'name' => 'print',                        'data' => ['receipt' => $payload]],
+            ]);
 
             return response()->json([
                 'ok'      => true,
-                'message' => "Test receipt sent directly to Pusher → channel \"{$data['channel']}\" (event: App\\Events\\NewReceiptEvent).",
+                'message' => "Test receipt sent to channel \"{$data['channel']}\" with events: \"App\\\\Events\\\\NewReceiptEvent\" and \"print\".",
             ]);
         } catch (\Throwable $e) {
             return response()->json([
