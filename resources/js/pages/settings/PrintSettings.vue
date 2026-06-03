@@ -2,7 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { Head } from '@inertiajs/vue3'
 import { toast } from 'vue-sonner'
-import { Printer, CheckCircle2, AlertCircle, Loader2, Bell, Send } from 'lucide-vue-next'
+import { Printer, CheckCircle2, AlertCircle, Loader2, Bell, Send, Wifi } from 'lucide-vue-next'
 import api from '@/utils/api'
 
 defineOptions({
@@ -29,11 +29,32 @@ const props = defineProps<{
     settings: PrintServiceSettings
     beams_instance_id: string | null
     beams_configured: boolean
+    channels_configured: boolean
+    channels_app_key: string | null
+    channels_cluster: string
 }>()
 
 const form = ref<PrintServiceSettings>({ ...props.settings })
 
-// Pusher Beams test
+// Pusher Channels test (primary — WebSocket)
+const channelsTest = ref({ channel: 'orders' })
+const channelsTesting = ref(false)
+const channelsResult = ref<{ ok: boolean; message: string } | null>(null)
+
+const sendTestChannels = async () => {
+    channelsTesting.value = true
+    channelsResult.value = null
+    try {
+        const res = await api.post('/api/v1/print-jobs/test-channels', channelsTest.value)
+        channelsResult.value = { ok: true, message: res.data.message }
+    } catch (err: any) {
+        channelsResult.value = { ok: false, message: err.response?.data?.message ?? 'Request failed' }
+    } finally {
+        channelsTesting.value = false
+    }
+}
+
+// Pusher Beams test (secondary — FCM wake-up)
 const beamsTest = ref({ interest: 'print-jobs', title: 'Test from BypassGrill', body: 'Push notifications are working!' })
 const beamsTesting = ref(false)
 const beamsResult = ref<{ ok: boolean; message: string } | null>(null)
@@ -278,15 +299,82 @@ onMounted(() => {
             </div>
         </div>
 
+        <!-- Pusher Channels test (primary WebSocket delivery) -->
+        <div class="rounded-xl border bg-card shadow-sm p-5 space-y-4">
+            <div class="flex items-start justify-between gap-3">
+                <div>
+                    <h3 class="font-semibold text-sm flex items-center gap-2">
+                        <Wifi class="h-4 w-4" /> Pusher Channels — WebSocket Test
+                    </h3>
+                    <p class="text-xs text-muted-foreground mt-0.5">
+                        Primary delivery path. Broadcasts a test receipt to the Android app via WebSocket.
+                        Android must have <code class="bg-muted px-1 rounded text-[11px]">ws_key</code> and <code class="bg-muted px-1 rounded text-[11px]">ws_host</code> configured.
+                    </p>
+                </div>
+                <span :class="['shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full',
+                    channels_configured
+                        ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                        : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400']">
+                    {{ channels_configured ? 'Configured' : 'Not Configured' }}
+                </span>
+            </div>
+
+            <div v-if="channels_app_key" class="rounded-lg bg-muted/50 px-3 py-2 text-xs space-y-1">
+                <div class="flex gap-2">
+                    <span class="text-muted-foreground w-20 shrink-0">App Key</span>
+                    <code class="font-mono break-all">{{ channels_app_key }}</code>
+                </div>
+                <div class="flex gap-2">
+                    <span class="text-muted-foreground w-20 shrink-0">Cluster</span>
+                    <code class="font-mono">{{ channels_cluster }}</code>
+                </div>
+                <div class="flex gap-2">
+                    <span class="text-muted-foreground w-20 shrink-0">ws_host</span>
+                    <code class="font-mono">ws-{{ channels_cluster }}.pusher.com</code>
+                </div>
+            </div>
+            <p v-else class="text-xs text-red-600 dark:text-red-400">
+                PUSHER_APP_KEY is not set. Add Pusher Channels credentials to <code class="bg-muted px-1 rounded">.env</code>.
+            </p>
+
+            <div class="flex items-end gap-3">
+                <div class="flex-1 max-w-[200px]">
+                    <label class="text-xs font-medium text-muted-foreground block mb-1">Channel</label>
+                    <input v-model="channelsTest.channel" type="text" placeholder="orders"
+                        class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                </div>
+                <button
+                    @click="sendTestChannels"
+                    :disabled="channelsTesting || !channels_configured"
+                    class="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition"
+                >
+                    <Loader2 v-if="channelsTesting" class="h-3.5 w-3.5 animate-spin" />
+                    <Send v-else class="h-3.5 w-3.5" />
+                    {{ channelsTesting ? 'Broadcasting…' : 'Broadcast Test Receipt' }}
+                </button>
+            </div>
+
+            <div v-if="channelsResult"
+                :class="['flex items-start gap-2 rounded-lg px-3 py-2.5 text-xs font-medium',
+                    channelsResult.ok
+                        ? 'bg-green-50 text-green-700 dark:bg-green-950/20 dark:text-green-400'
+                        : 'bg-red-50 text-red-700 dark:bg-red-950/20 dark:text-red-400']">
+                <CheckCircle2 v-if="channelsResult.ok" class="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                <AlertCircle v-else class="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                {{ channelsResult.message }}
+            </div>
+        </div>
+
         <!-- Pusher Beams webhook test -->
         <div class="rounded-xl border bg-card shadow-sm p-5 space-y-4">
             <div class="flex items-start justify-between gap-3">
                 <div>
                     <h3 class="font-semibold text-sm flex items-center gap-2">
-                        <Bell class="h-4 w-4" /> Pusher Beams — Push Notification Test
+                        <Bell class="h-4 w-4" /> Pusher Beams — FCM Wake-up Test
                     </h3>
                     <p class="text-xs text-muted-foreground mt-0.5">
-                        Send a test push notification to your Android printer app via Pusher Beams.
+                        Secondary path — sends an FCM push notification to wake the Android app.
+                        Does not carry receipt data; use the Channels test above for full receipt delivery.
                     </p>
                 </div>
                 <span

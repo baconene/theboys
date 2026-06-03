@@ -74,6 +74,41 @@ class PrintJobController extends Controller
         return response()->json(['id' => $printJob->id, 'status' => $printJob->status]);
     }
 
+    // Broadcast a test receipt over Pusher Channels (WebSocket — primary delivery path)
+    public function testChannels(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'channel' => 'required|string|max:100',
+        ]);
+
+        if (! config('broadcasting.connections.pusher.key')) {
+            return response()->json([
+                'ok'      => false,
+                'message' => 'PUSHER_APP_KEY is not configured. Add Channels credentials to .env first.',
+            ], 422);
+        }
+
+        try {
+            broadcast(new \App\Events\NewReceiptEvent([
+                'store'   => ['name' => config('app.name'), 'address' => null, 'phone' => null, 'footer' => 'Test receipt — ignore'],
+                'receipt' => ['number' => 'TEST-' . now()->format('His'), 'date' => now()->setTimezone('Asia/Manila')->format('M d, Y h:i A'), 'cashier' => auth()->user()?->name],
+                'items'   => [['name' => 'Test Item', 'qty' => 1.0, 'price' => 1.00, 'total' => 1.00]],
+                'totals'  => ['subtotal' => 1.00, 'tax' => 0.00, 'discount' => 0.00, 'total' => 1.00],
+                'payment' => null,
+            ]));
+
+            return response()->json([
+                'ok'      => true,
+                'message' => "Test receipt broadcast on channel \"{$data['channel']}\" (event: App\\Events\\NewReceiptEvent).",
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'ok'      => false,
+                'message' => $e->getMessage(),
+            ], 422);
+        }
+    }
+
     // Send a test push notification via Pusher Beams
     public function testNotification(Request $request): JsonResponse
     {
