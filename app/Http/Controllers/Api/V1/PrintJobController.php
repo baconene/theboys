@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers\Api\V1;
 
-use App\Events\ReceiptQueued;
 use App\Http\Controllers\Controller;
 use App\Models\Order;
 use App\Models\PrintJob;
@@ -74,18 +73,16 @@ class PrintJobController extends Controller
         return response()->json(['id' => $printJob->id, 'status' => $printJob->status]);
     }
 
-    // Retry a failed job — rebroadcast the Pusher event
+    // Retry a failed or stuck job — re-sends the Beams push notification
     public function retry(PrintJob $printJob): JsonResponse
     {
         if (! in_array($printJob->status, ['failed', 'sent'])) {
             return response()->json(['message' => 'Only failed or stuck jobs can be retried.'], 422);
         }
 
-        $printJob->increment('attempts');
-        $printJob->update(['status' => 'sent', 'sent_at' => now(), 'failed_reason' => null]);
+        $order = $printJob->order->load(['items.product', 'user', 'queueNumber']);
+        $this->printJobService->queueForStatusChange($order, $printJob->trigger_status ?? 'retry');
 
-        broadcast(new ReceiptQueued($printJob));
-
-        return response()->json(['id' => $printJob->id, 'status' => $printJob->status]);
+        return response()->json(['id' => $printJob->id, 'status' => 'sent']);
     }
 }

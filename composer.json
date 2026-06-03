@@ -16,6 +16,7 @@
         "laravel/tinker": "^3.0",
         "laravel/wayfinder": "^0.1.14",
         "pusher/pusher-php-server": "*",
+        "pusher/pusher-push-notifications": "*",
         "spatie/laravel-permission": "*"
     },
     "require-dev": {
