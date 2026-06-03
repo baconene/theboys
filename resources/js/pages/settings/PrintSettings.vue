@@ -30,6 +30,8 @@ const props = defineProps<{
     beams_instance_id: string | null
     beams_configured: boolean
     channels_configured: boolean
+    channels_driver_ok: boolean
+    channels_driver: string
     channels_app_key: string | null
     channels_cluster: string
 }>()
@@ -316,6 +318,17 @@ onMounted(() => {
                         ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
                         : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400']">
                     {{ channels_configured ? 'Configured' : 'Not Configured' }}
+                </span>
+            </div>
+
+            <!-- Warn if BROADCAST_CONNECTION is not pusher -->
+            <div v-if="channels_configured && !channels_driver_ok"
+                class="flex items-start gap-2 rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 px-3 py-2.5 text-xs text-amber-700 dark:text-amber-400">
+                <AlertCircle class="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                <span>
+                    <strong>BROADCAST_CONNECTION={{ channels_driver }}</strong> — events go to the log, not Pusher.
+                    Change it to <code class="bg-amber-100 dark:bg-amber-900/30 px-1 rounded">BROADCAST_CONNECTION=pusher</code> in your <code class="bg-amber-100 dark:bg-amber-900/30 px-1 rounded">.env</code>,
+                    then run <code class="bg-amber-100 dark:bg-amber-900/30 px-1 rounded">php artisan config:clear</code>.
                 </span>
             </div>
 

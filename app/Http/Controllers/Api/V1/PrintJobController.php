@@ -81,25 +81,45 @@ class PrintJobController extends Controller
             'channel' => 'required|string|max:100',
         ]);
 
-        if (! config('broadcasting.connections.pusher.key')) {
+        $key    = config('broadcasting.connections.pusher.key');
+        $secret = config('broadcasting.connections.pusher.secret');
+        $appId  = config('broadcasting.connections.pusher.app_id');
+
+        if (! $key || ! $secret || ! $appId) {
             return response()->json([
                 'ok'      => false,
-                'message' => 'PUSHER_APP_KEY is not configured. Add Channels credentials to .env first.',
+                'message' => 'PUSHER_APP_KEY, PUSHER_APP_SECRET, or PUSHER_APP_ID is missing in .env.',
+            ], 422);
+        }
+
+        $driver = config('broadcasting.default');
+        if ($driver !== 'pusher') {
+            return response()->json([
+                'ok'      => false,
+                'message' => "BROADCAST_CONNECTION is set to \"{$driver}\", not \"pusher\". Change it in your .env file and clear the config cache.",
             ], 422);
         }
 
         try {
-            broadcast(new \App\Events\NewReceiptEvent([
+            $payload = [
                 'store'   => ['name' => config('app.name'), 'address' => null, 'phone' => null, 'footer' => 'Test receipt — ignore'],
                 'receipt' => ['number' => 'TEST-' . now()->format('His'), 'date' => now()->setTimezone('Asia/Manila')->format('M d, Y h:i A'), 'cashier' => auth()->user()?->name],
                 'items'   => [['name' => 'Test Item', 'qty' => 1.0, 'price' => 1.00, 'total' => 1.00]],
                 'totals'  => ['subtotal' => 1.00, 'tax' => 0.00, 'discount' => 0.00, 'total' => 1.00],
                 'payment' => null,
-            ]));
+            ];
+
+            // Directly use the Pusher driver (bypasses default driver check)
+            $pusher = new \Pusher\Pusher($key, $secret, $appId, [
+                'cluster'  => config('broadcasting.connections.pusher.options.cluster', 'ap1'),
+                'useTLS'   => true,
+            ]);
+
+            $pusher->trigger($data['channel'], 'App\\Events\\NewReceiptEvent', ['receipt' => $payload]);
 
             return response()->json([
                 'ok'      => true,
-                'message' => "Test receipt broadcast on channel \"{$data['channel']}\" (event: App\\Events\\NewReceiptEvent).",
+                'message' => "Test receipt sent directly to Pusher → channel \"{$data['channel']}\" (event: App\\Events\\NewReceiptEvent).",
             ]);
         } catch (\Throwable $e) {
             return response()->json([
