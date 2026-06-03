@@ -118,5 +118,11 @@ Route::prefix('v1')->group(function () {
         Route::post('/hris/payroll', [HrisController::class, 'storePayroll']);
         Route::post('/hris/payroll/{payrollRecord}/pay', [HrisController::class, 'markPayrollPaid']);
         Route::delete('/hris/payroll/{payrollRecord}', [HrisController::class, 'destroyPayroll']);
+
+        // Print Jobs — webhook service for receipt printer
+        Route::get('/print-jobs', [\App\Http\Controllers\Api\V1\PrintJobController::class, 'index']);
+        Route::post('/print-jobs', [\App\Http\Controllers\Api\V1\PrintJobController::class, 'store']);
+        Route::post('/print-jobs/{printJob}/ack', [\App\Http\Controllers\Api\V1\PrintJobController::class, 'acknowledge']);
+        Route::post('/print-jobs/{printJob}/retry', [\App\Http\Controllers\Api\V1\PrintJobController::class, 'retry']);
     });
 });

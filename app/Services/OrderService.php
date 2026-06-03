@@ -7,6 +7,7 @@ use App\Models\OrderItem;
 use App\Models\PrintServiceSetting;
 use App\Models\QueueNumber;
 use App\Enums\OrderStatus;
+use App\Services\PrintJobService;
 use App\Services\PrintReceiptService;
 use Illuminate\Support\Facades\DB;
 
@@ -14,6 +15,7 @@ class OrderService
 {
     public function __construct(
         private InventoryService $inventoryService,
+        private PrintJobService $printJobService,
         private PrintReceiptService $printReceiptService,
     ) {}
 
@@ -47,6 +49,11 @@ class OrderService
             }
 
             $order->calculateTotals();
+
+            // Queue a Pusher print job for the new order
+            try {
+                $this->printJobService->queueForNewOrder($order->fresh(['items.product', 'user', 'queueNumber']));
+            } catch (\Throwable) { /* non-critical — don't fail the order if printing fails */ }
 
             \App\Models\FinancialTransaction::create([
                 'type'          => 'order',
@@ -121,6 +128,11 @@ class OrderService
                 }
             }
         }
+
+        // Queue a Pusher print job for every status change
+        try {
+            $this->printJobService->queueForStatusChange($order->fresh(['items.product', 'user', 'queueNumber']), $status->value);
+        } catch (\Throwable) { /* non-critical */ }
 
         return $order;
     }
