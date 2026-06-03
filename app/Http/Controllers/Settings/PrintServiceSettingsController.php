@@ -14,7 +14,9 @@ class PrintServiceSettingsController extends Controller
         abort_unless(auth()->user()?->hasRole('admin'), 403);
 
         return Inertia::render('settings/PrintSettings', [
-            'settings' => PrintServiceSetting::getSetting(),
+            'settings'           => PrintServiceSetting::getSetting(),
+            'beams_instance_id'  => config('broadcasting.beams.instance_id') ?: null,
+            'beams_configured'   => ! empty(config('broadcasting.beams.instance_id')) && ! empty(config('broadcasting.beams.secret_key')),
         ]);
     }
 }

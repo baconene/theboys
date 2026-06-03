@@ -8,6 +8,7 @@ use App\Models\PrintJob;
 use App\Services\PrintJobService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Pusher\PushNotifications\PushNotifications;
 
 class PrintJobController extends Controller
 {
@@ -71,6 +72,69 @@ class PrintJobController extends Controller
         ]);
 
         return response()->json(['id' => $printJob->id, 'status' => $printJob->status]);
+    }
+
+    // Send a test push notification via Pusher Beams
+    public function testNotification(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'interest' => 'required|string|max:100',
+            'title'    => 'required|string|max:100',
+            'body'     => 'required|string|max:255',
+        ]);
+
+        $instanceId = config('broadcasting.beams.instance_id');
+        $secretKey  = config('broadcasting.beams.secret_key');
+
+        if (! $instanceId || ! $secretKey) {
+            return response()->json([
+                'ok'      => false,
+                'message' => 'PUSHER_BEAMS_INSTANCE_ID or PUSHER_BEAMS_SECRET_KEY is not configured.',
+            ], 422);
+        }
+
+        try {
+            $beams = new PushNotifications([
+                'instanceId' => $instanceId,
+                'secretKey'  => $secretKey,
+            ]);
+
+            $beams->publishToInterests(
+                [$data['interest']],
+                [
+                    'fcm' => [
+                        'notification' => [
+                            'title' => $data['title'],
+                            'body'  => $data['body'],
+                        ],
+                    ],
+                    'web' => [
+                        'notification' => [
+                            'title' => $data['title'],
+                            'body'  => $data['body'],
+                        ],
+                    ],
+                    'apns' => [
+                        'aps' => [
+                            'alert' => [
+                                'title' => $data['title'],
+                                'body'  => $data['body'],
+                            ],
+                        ],
+                    ],
+                ]
+            );
+
+            return response()->json([
+                'ok'      => true,
+                'message' => "Notification sent to interest \"{$data['interest']}\".",
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'ok'      => false,
+                'message' => $e->getMessage(),
+            ], 422);
+        }
     }
 
     // Retry a failed or stuck job — re-sends the Beams push notification

@@ -122,6 +122,7 @@ Route::prefix('v1')->group(function () {
         // Print Jobs — webhook service for receipt printer
         Route::get('/print-jobs', [\App\Http\Controllers\Api\V1\PrintJobController::class, 'index']);
         Route::post('/print-jobs', [\App\Http\Controllers\Api\V1\PrintJobController::class, 'store']);
+        Route::post('/print-jobs/test-notification', [\App\Http\Controllers\Api\V1\PrintJobController::class, 'testNotification']);
         Route::post('/print-jobs/{printJob}/ack', [\App\Http\Controllers\Api\V1\PrintJobController::class, 'acknowledge']);
         Route::post('/print-jobs/{printJob}/retry', [\App\Http\Controllers\Api\V1\PrintJobController::class, 'retry']);
     });

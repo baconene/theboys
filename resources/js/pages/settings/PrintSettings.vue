@@ -2,7 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { Head } from '@inertiajs/vue3'
 import { toast } from 'vue-sonner'
-import { Printer, CheckCircle2, AlertCircle, Loader2 } from 'lucide-vue-next'
+import { Printer, CheckCircle2, AlertCircle, Loader2, Bell, Send } from 'lucide-vue-next'
 import api from '@/utils/api'
 
 defineOptions({
@@ -25,9 +25,31 @@ interface PrintServiceSettings {
     print_enabled: boolean
 }
 
-const props = defineProps<{ settings: PrintServiceSettings }>()
+const props = defineProps<{
+    settings: PrintServiceSettings
+    beams_instance_id: string | null
+    beams_configured: boolean
+}>()
 
 const form = ref<PrintServiceSettings>({ ...props.settings })
+
+// Pusher Beams test
+const beamsTest = ref({ interest: 'print-jobs', title: 'Test from BypassGrill', body: 'Push notifications are working!' })
+const beamsTesting = ref(false)
+const beamsResult = ref<{ ok: boolean; message: string } | null>(null)
+
+const sendTestNotification = async () => {
+    beamsTesting.value = true
+    beamsResult.value = null
+    try {
+        const res = await api.post('/api/v1/print-jobs/test-notification', beamsTest.value)
+        beamsResult.value = { ok: true, message: res.data.message }
+    } catch (err: any) {
+        beamsResult.value = { ok: false, message: err.response?.data?.message ?? 'Request failed' }
+    } finally {
+        beamsTesting.value = false
+    }
+}
 const saving = ref(false)
 const testing = ref(false)
 const connectionStatus = ref<'idle' | 'ok' | 'error'>('idle')
@@ -253,6 +275,80 @@ onMounted(() => {
                     <input type="checkbox" v-model="form.print_auto_print" class="sr-only peer" />
                     <div class="w-10 h-5 bg-muted rounded-full peer peer-checked:bg-primary transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-5"></div>
                 </label>
+            </div>
+        </div>
+
+        <!-- Pusher Beams webhook test -->
+        <div class="rounded-xl border bg-card shadow-sm p-5 space-y-4">
+            <div class="flex items-start justify-between gap-3">
+                <div>
+                    <h3 class="font-semibold text-sm flex items-center gap-2">
+                        <Bell class="h-4 w-4" /> Pusher Beams — Push Notification Test
+                    </h3>
+                    <p class="text-xs text-muted-foreground mt-0.5">
+                        Send a test push notification to your Android printer app via Pusher Beams.
+                    </p>
+                </div>
+                <span
+                    :class="[
+                        'shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full',
+                        beams_configured
+                            ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                            : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+                    ]"
+                >
+                    {{ beams_configured ? 'Configured' : 'Not Configured' }}
+                </span>
+            </div>
+
+            <div v-if="beams_instance_id" class="rounded-lg bg-muted/50 px-3 py-2 text-xs font-mono text-muted-foreground break-all">
+                Instance: {{ beams_instance_id }}
+            </div>
+            <p v-else class="text-xs text-red-600 dark:text-red-400">
+                PUSHER_BEAMS_INSTANCE_ID and PUSHER_BEAMS_SECRET_KEY are not set in your .env file.
+            </p>
+
+            <div class="grid sm:grid-cols-3 gap-3">
+                <div>
+                    <label class="text-xs font-medium text-muted-foreground block mb-1">Interest (channel)</label>
+                    <input v-model="beamsTest.interest" type="text" placeholder="print-jobs"
+                        class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                </div>
+                <div>
+                    <label class="text-xs font-medium text-muted-foreground block mb-1">Title</label>
+                    <input v-model="beamsTest.title" type="text"
+                        class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                </div>
+                <div>
+                    <label class="text-xs font-medium text-muted-foreground block mb-1">Body</label>
+                    <input v-model="beamsTest.body" type="text"
+                        class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                </div>
+            </div>
+
+            <div class="flex items-center gap-3">
+                <button
+                    @click="sendTestNotification"
+                    :disabled="beamsTesting || !beams_configured"
+                    class="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition"
+                >
+                    <Loader2 v-if="beamsTesting" class="h-3.5 w-3.5 animate-spin" />
+                    <Send v-else class="h-3.5 w-3.5" />
+                    {{ beamsTesting ? 'Sending…' : 'Send Test Notification' }}
+                </button>
+            </div>
+
+            <div v-if="beamsResult"
+                :class="[
+                    'flex items-start gap-2 rounded-lg px-3 py-2.5 text-xs font-medium',
+                    beamsResult.ok
+                        ? 'bg-green-50 text-green-700 dark:bg-green-950/20 dark:text-green-400'
+                        : 'bg-red-50 text-red-700 dark:bg-red-950/20 dark:text-red-400',
+                ]"
+            >
+                <CheckCircle2 v-if="beamsResult.ok" class="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                <AlertCircle v-else class="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                {{ beamsResult.message }}
             </div>
         </div>
 
