@@ -106,6 +106,12 @@ Route::prefix('v1')->group(function () {
         Route::get('/print-service/settings', [\App\Http\Controllers\Api\V1\PrintServiceController::class, 'getSettings']);
         Route::post('/print-service/settings', [\App\Http\Controllers\Api\V1\PrintServiceController::class, 'saveSettings']);
         Route::post('/print-service/test', [\App\Http\Controllers\Api\V1\PrintServiceController::class, 'testConnection']);
+        Route::post('/print-service/clear-config-cache', function () {
+            abort_unless(auth()->user()?->hasRole('admin'), 403);
+            \Illuminate\Support\Facades\Artisan::call('config:clear');
+            \Illuminate\Support\Facades\Artisan::call('cache:clear');
+            return response()->json(['ok' => true, 'message' => 'Config and app cache cleared. Broadcasting driver is now: ' . config('broadcasting.default')]);
+        });
 
         // HRIS — Employees
         Route::get('/hris/employees', [HrisController::class, 'employees']);

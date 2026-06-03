@@ -92,14 +92,6 @@ class PrintJobController extends Controller
             ], 422);
         }
 
-        $driver = config('broadcasting.default');
-        if ($driver !== 'pusher') {
-            return response()->json([
-                'ok'      => false,
-                'message' => "BROADCAST_CONNECTION is set to \"{$driver}\", not \"pusher\". Change it in your .env file and clear the config cache.",
-            ], 422);
-        }
-
         try {
             $payload = [
                 'store'   => ['name' => config('app.name'), 'address' => null, 'phone' => null, 'footer' => 'Test receipt — ignore'],

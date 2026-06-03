@@ -38,6 +38,25 @@ const props = defineProps<{
 
 const form = ref<PrintServiceSettings>({ ...props.settings })
 
+// Config cache
+const cacheClearBusy = ref(false)
+const cacheClearResult = ref<{ ok: boolean; message: string } | null>(null)
+
+const clearConfigCache = async () => {
+    cacheClearBusy.value = true
+    cacheClearResult.value = null
+    try {
+        const res = await api.post('/api/v1/print-service/clear-config-cache')
+        cacheClearResult.value = { ok: true, message: res.data.message }
+        // Reload the page so Inertia picks up the fresh props (updated driver name)
+        setTimeout(() => window.location.reload(), 1200)
+    } catch (err: any) {
+        cacheClearResult.value = { ok: false, message: err.response?.data?.message ?? 'Failed to clear cache' }
+    } finally {
+        cacheClearBusy.value = false
+    }
+}
+
 // Pusher Channels test (primary — WebSocket)
 const channelsTest = ref({ channel: 'orders' })
 const channelsTesting = ref(false)
@@ -321,15 +340,27 @@ onMounted(() => {
                 </span>
             </div>
 
-            <!-- Warn if BROADCAST_CONNECTION is not pusher -->
-            <div v-if="channels_configured && !channels_driver_ok"
-                class="flex items-start gap-2 rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 px-3 py-2.5 text-xs text-amber-700 dark:text-amber-400">
-                <AlertCircle class="h-3.5 w-3.5 mt-0.5 shrink-0" />
-                <span>
-                    <strong>BROADCAST_CONNECTION={{ channels_driver }}</strong> — events go to the log, not Pusher.
-                    Change it to <code class="bg-amber-100 dark:bg-amber-900/30 px-1 rounded">BROADCAST_CONNECTION=pusher</code> in your <code class="bg-amber-100 dark:bg-amber-900/30 px-1 rounded">.env</code>,
-                    then run <code class="bg-amber-100 dark:bg-amber-900/30 px-1 rounded">php artisan config:clear</code>.
-                </span>
+            <!-- Warn if BROADCAST_CONNECTION is not pusher, with a one-click cache clear -->
+            <div v-if="!channels_driver_ok"
+                class="rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 px-3 py-3 text-xs text-amber-700 dark:text-amber-400 space-y-2">
+                <div class="flex items-start gap-2">
+                    <AlertCircle class="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                    <span>
+                        <strong>BROADCAST_CONNECTION={{ channels_driver || 'null' }}</strong> — config cache is stale.
+                        Your <code class="bg-amber-100 dark:bg-amber-900/30 px-1 rounded">.env</code> has <code class="bg-amber-100 dark:bg-amber-900/30 px-1 rounded">BROADCAST_CONNECTION=pusher</code>
+                        but the cached config still has the old value. Click below to clear it.
+                    </span>
+                </div>
+                <div class="flex items-center gap-2 pl-5">
+                    <button @click="clearConfigCache" :disabled="cacheClearBusy"
+                        class="flex items-center gap-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 text-xs font-bold disabled:opacity-50 transition">
+                        <Loader2 v-if="cacheClearBusy" class="h-3 w-3 animate-spin" />
+                        {{ cacheClearBusy ? 'Clearing…' : 'Clear Config Cache' }}
+                    </button>
+                    <span v-if="cacheClearResult" :class="cacheClearResult.ok ? 'text-green-600' : 'text-red-600'">
+                        {{ cacheClearResult.message }}
+                    </span>
+                </div>
             </div>
 
             <div v-if="channels_app_key" class="rounded-lg bg-muted/50 px-3 py-2 text-xs space-y-1">
