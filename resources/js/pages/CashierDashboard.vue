@@ -308,6 +308,15 @@ const closeAndClear = () => {
 
 const printReceipt = async () => {
     if (!completedOrder.value) return
+    // Primary: send to Android printing service via Pusher Channels
+    try {
+        await api.post('/api/v1/print-jobs', { order_id: completedOrder.value.orderId })
+        toast.success('Receipt sent to printer')
+        return
+    } catch {
+        // Fall through to browser print if Pusher service is not configured
+    }
+    // Fallback: browser print dialog
     try {
         await doPrint(completedOrder.value)
     } catch (err: any) {
