@@ -7,12 +7,14 @@ use App\Models\PrintServiceSetting;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Schema;
 
 class PrintServiceController extends Controller
 {
     public function getSettings(): JsonResponse
     {
         $this->adminOnly();
+        $this->ensurePrintChannelColumn();
 
         return response()->json(PrintServiceSetting::getSetting());
     }
@@ -20,6 +22,7 @@ class PrintServiceController extends Controller
     public function saveSettings(Request $request): JsonResponse
     {
         $this->adminOnly();
+        $this->ensurePrintChannelColumn();
 
         $data = $request->validate([
             'print_service_url'   => 'required|string|max:255',
@@ -40,6 +43,19 @@ class PrintServiceController extends Controller
         $setting->update($data);
 
         return response()->json($setting->fresh());
+    }
+
+    /**
+     * Self-heal: add the print_channel column if the migration hasn't run yet
+     * on this environment. Prevents a 500 ("Unknown column 'print_channel'").
+     */
+    private function ensurePrintChannelColumn(): void
+    {
+        if (! Schema::hasColumn('print_service_settings', 'print_channel')) {
+            Schema::table('print_service_settings', function ($table) {
+                $table->string('print_channel')->default('orders');
+            });
+        }
     }
 
     public function testConnection(Request $request): JsonResponse
