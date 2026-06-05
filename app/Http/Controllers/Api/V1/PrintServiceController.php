@@ -44,18 +44,28 @@ class PrintServiceController extends Controller
         $channel = ($data['print_channel'] ?? '') ?: 'orders';
         unset($data['print_channel']);   // keep the core update independent of the column
 
-        // Core settings — these columns always exist, so this can never fail on schema.
-        $setting = PrintServiceSetting::getSetting();
-        $setting->update($data);
+        try {
+            // Core settings — these columns always exist, so this can never fail on schema.
+            $setting = PrintServiceSetting::getSetting();
+            $setting->update($data);
 
-        // Channel: persist to the column if available, otherwise cache it.
-        $this->persistChannel($setting, $channel);
+            // Channel: persist to the column if available, otherwise cache it.
+            $this->persistChannel($setting, $channel);
 
-        $fresh = $setting->fresh();
-        $payload = $fresh->toArray();
-        $payload['print_channel'] = $this->currentChannel($fresh);
+            $fresh = $setting->fresh();
+            $payload = $fresh->toArray();
+            $payload['print_channel'] = $this->currentChannel($fresh);
 
-        return response()->json($payload);
+            return response()->json($payload);
+        } catch (\Throwable $e) {
+            // Surface the real cause even when APP_DEBUG=false (prod hides it otherwise).
+            \Illuminate\Support\Facades\Log::error('Print settings save failed', ['error' => $e->getMessage()]);
+
+            return response()->json([
+                'message' => 'Save failed: ' . $e->getMessage(),
+                'type'    => class_basename($e),
+            ], 500);
+        }
     }
 
     /** Persist the channel without ever 500-ing, even if the column/ALTER is unavailable. */
