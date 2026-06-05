@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue'
 import { Head } from '@inertiajs/vue3'
+import { ShoppingBag, User, MapPin, Clock, CreditCard, Package, Receipt } from 'lucide-vue-next'
 
 defineOptions({ layout: null })
 
@@ -17,180 +17,196 @@ interface Order {
 
 const props = defineProps<{ order: Order }>()
 
-const fmt = (v: number) => '₱' + v.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-const qrUrl = computed(() => window.location.href)
+const fmt = (v: number) => '₱' + v.toLocaleString('en-PH', { minimumFractionDigits: 2 })
 
 const orderTypeLabel = (t: string) => ({ dine_in: 'Dine In', takeout: 'Takeout', delivery: 'Delivery' }[t] ?? t)
 
 const statusColor = (s: string) => ({
-    pending:   'bg-yellow-100 text-yellow-800',
-    preparing: 'bg-blue-100 text-blue-800',
-    ready:     'bg-green-100 text-green-800',
-    completed: 'bg-green-100 text-green-800',
-    cancelled: 'bg-red-100 text-red-800',
-}[s] ?? 'bg-gray-100 text-gray-800')
+    pending:   'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400',
+    preparing: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+    ready:     'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
+    completed: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+    cancelled: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+}[s] ?? 'bg-muted text-muted-foreground')
+
+const payColor = (s: string) => ({
+    paid:     'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+    pending:  'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400',
+    refunded: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
+    voided:   'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+}[s] ?? 'bg-muted text-muted-foreground')
 </script>
 
 <template>
     <Head :title="`Order #${order.id} — Bypass Grill`" />
 
-    <div class="min-h-screen bg-gray-50 py-6 px-4">
-        <div class="max-w-md mx-auto">
+    <div class="min-h-screen bg-background flex justify-center px-3 py-6 sm:py-10">
+        <div class="w-full max-w-2xl space-y-4">
 
-            <!-- Header -->
-            <div class="text-center mb-6">
+            <!-- Store header -->
+            <div class="text-center mb-2">
                 <h1 class="text-2xl font-black tracking-tight">BYPASS GRILL</h1>
-                <p class="text-sm text-gray-500 mt-0.5">Filipino Grill Restaurant</p>
+                <p class="text-xs text-muted-foreground mt-0.5">Filipino Grill Restaurant</p>
             </div>
 
-            <!-- Order Card -->
-            <div class="bg-white rounded-2xl shadow-sm border overflow-hidden">
-
-                <!-- Order Number Banner -->
-                <div class="bg-gray-900 text-white px-5 py-4 text-center">
-                    <p class="text-xs uppercase tracking-widest text-gray-400 mb-0.5">
-                        {{ order.queue_number ? 'Queue Number' : 'Order Number' }}
-                    </p>
-                    <p class="text-4xl font-black">
-                        {{ order.queue_number ? '#' + order.queue_number : '#' + order.id }}
-                    </p>
-                    <div class="flex items-center justify-center gap-2 mt-2">
-                        <span :class="['text-xs font-semibold px-2.5 py-1 rounded-full capitalize', statusColor(order.status)]">
-                            {{ order.status }}
-                        </span>
-                        <span :class="['text-xs font-semibold px-2.5 py-1 rounded-full capitalize', statusColor(order.payment_status)]">
-                            {{ order.payment_status === 'paid' ? 'Paid' : 'Payment Pending' }}
-                        </span>
-                    </div>
+            <!-- Order header -->
+            <div class="rounded-xl border bg-card shadow-sm p-4">
+                <div class="flex items-center gap-2 flex-wrap">
+                    <h2 class="text-lg sm:text-xl font-black flex items-center gap-1.5">
+                        <ShoppingBag class="h-5 w-5 text-primary shrink-0" />
+                        Order #{{ order.id }}
+                    </h2>
+                    <span v-if="order.queue_number" class="rounded-full bg-muted px-2 py-0.5 text-xs font-semibold">
+                        Q{{ order.queue_number }}
+                    </span>
+                    <span :class="['rounded-full px-2 py-0.5 text-xs font-semibold capitalize', statusColor(order.status)]">
+                        {{ order.status }}
+                    </span>
+                    <span :class="['rounded-full px-2 py-0.5 text-xs font-semibold capitalize', payColor(order.payment_status)]">
+                        {{ order.payment_status }}
+                    </span>
                 </div>
+                <p class="text-xs text-muted-foreground mt-1">
+                    {{ orderTypeLabel(order.order_type) }}
+                    <template v-if="order.table_number"> · Table {{ order.table_number }}</template>
+                </p>
+            </div>
 
-                <!-- Order Info -->
-                <div class="px-5 py-4 border-b space-y-2.5">
-                    <div class="flex justify-between text-sm">
-                        <span class="text-gray-500">Order #</span>
-                        <span class="font-semibold">{{ order.id }}</span>
-                    </div>
-                    <div class="flex justify-between text-sm">
-                        <span class="text-gray-500">Type</span>
-                        <span class="font-semibold">{{ orderTypeLabel(order.order_type) }}</span>
-                    </div>
-                    <div v-if="order.table_number" class="flex justify-between text-sm">
-                        <span class="text-gray-500">Table</span>
-                        <span class="font-semibold">{{ order.table_number }}</span>
-                    </div>
-                    <div class="flex justify-between text-sm">
-                        <span class="text-gray-500">Date</span>
-                        <span class="font-semibold">{{ order.created_at }}</span>
-                    </div>
-                    <div v-if="order.cashier" class="flex justify-between text-sm">
-                        <span class="text-gray-500">Cashier</span>
-                        <span class="font-semibold">{{ order.cashier }}</span>
-                    </div>
-                </div>
-
-                <!-- Customer Info (delivery / named customer) -->
-                <div v-if="order.customer_name || order.customer_address" class="px-5 py-4 border-b bg-gray-50 space-y-2">
-                    <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Customer</p>
-                    <div v-if="order.customer_name" class="flex justify-between text-sm">
-                        <span class="text-gray-500">Name</span>
-                        <span class="font-semibold">{{ order.customer_name }}</span>
-                    </div>
-                    <div v-if="order.customer_contact" class="flex justify-between text-sm">
-                        <span class="text-gray-500">Contact</span>
-                        <span class="font-semibold">{{ order.customer_contact }}</span>
-                    </div>
-                    <div v-if="order.customer_address" class="flex justify-between text-sm">
-                        <span class="text-gray-500">Address</span>
-                        <span class="font-semibold text-right max-w-[60%]">{{ order.customer_address }}</span>
-                    </div>
-                </div>
-
-                <!-- Items -->
-                <div class="px-5 py-4 border-b">
-                    <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Items</p>
-                    <div class="space-y-2">
-                        <div v-for="item in order.items" :key="item.name"
-                            class="flex items-start justify-between text-sm gap-2">
-                            <div class="flex-1 min-w-0">
-                                <span class="font-semibold">{{ item.quantity }}×</span>
-                                <span class="ml-1">{{ item.name }}</span>
-                                <div class="text-xs text-gray-400">{{ fmt(item.unit_price) }} each</div>
-                            </div>
-                            <span class="font-semibold tabular-nums">{{ fmt(item.subtotal) }}</span>
+            <!-- Timeline + Customer -->
+            <div class="grid sm:grid-cols-2 gap-3 sm:gap-4">
+                <div class="rounded-xl border bg-card shadow-sm p-4 space-y-3">
+                    <h3 class="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                        <Clock class="h-3.5 w-3.5" /> Order Info
+                    </h3>
+                    <div class="space-y-1.5 text-sm">
+                        <div class="flex justify-between gap-4">
+                            <span class="text-muted-foreground shrink-0">Date</span>
+                            <span class="font-medium text-right">{{ order.created_at }}</span>
+                        </div>
+                        <div class="flex justify-between gap-4">
+                            <span class="text-muted-foreground shrink-0">Type</span>
+                            <span class="font-medium text-right">{{ orderTypeLabel(order.order_type) }}</span>
+                        </div>
+                        <div v-if="order.table_number" class="flex justify-between gap-4">
+                            <span class="text-muted-foreground shrink-0">Table</span>
+                            <span class="font-medium text-right">{{ order.table_number }}</span>
+                        </div>
+                        <div class="flex justify-between gap-4">
+                            <span class="text-muted-foreground shrink-0">Cashier</span>
+                            <span class="font-medium text-right">{{ order.cashier ?? '—' }}</span>
                         </div>
                     </div>
                 </div>
 
-                <!-- Financial Summary -->
-                <div class="px-5 py-4 border-b space-y-2">
-                    <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Summary</p>
-                    <div class="flex justify-between text-sm">
-                        <span class="text-gray-500">Subtotal</span>
-                        <span class="tabular-nums">{{ fmt(order.subtotal) }}</span>
-                    </div>
-                    <div v-if="order.discount_amount > 0" class="flex justify-between text-sm text-red-600">
-                        <span>Discount</span>
-                        <span class="tabular-nums">-{{ fmt(order.discount_amount) }}</span>
-                    </div>
-                    <div v-if="order.tax_amount > 0" class="flex justify-between text-sm">
-                        <span class="text-gray-500">Tax</span>
-                        <span class="tabular-nums">{{ fmt(order.tax_amount) }}</span>
-                    </div>
-                    <div class="flex justify-between text-base font-black pt-1 border-t">
-                        <span>TOTAL</span>
-                        <span class="tabular-nums">{{ fmt(order.total_amount) }}</span>
-                    </div>
-                </div>
-
-                <!-- Payment Info -->
-                <div v-if="order.payment" class="px-5 py-4 border-b bg-green-50 space-y-2">
-                    <p class="text-xs font-semibold text-green-600 uppercase tracking-wide mb-2">Payment</p>
-                    <div class="flex justify-between text-sm">
-                        <span class="text-gray-500">Method</span>
-                        <span class="font-semibold">{{ order.payment.method }}</span>
-                    </div>
-                    <div class="flex justify-between text-sm">
-                        <span class="text-gray-500">Amount Paid</span>
-                        <span class="font-semibold tabular-nums">{{ fmt(order.payment.amount) }}</span>
-                    </div>
-                    <div v-if="order.payment.change > 0" class="flex justify-between text-sm font-bold text-green-700">
-                        <span>Change</span>
-                        <span class="tabular-nums">{{ fmt(order.payment.change) }}</span>
+                <div v-if="order.customer_name || order.customer_contact || order.customer_address"
+                    class="rounded-xl border bg-card shadow-sm p-4 space-y-3">
+                    <h3 class="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                        <User class="h-3.5 w-3.5" /> Customer
+                    </h3>
+                    <div class="space-y-1.5 text-sm">
+                        <div v-if="order.customer_name" class="flex justify-between">
+                            <span class="text-muted-foreground">Name</span>
+                            <span class="font-medium">{{ order.customer_name }}</span>
+                        </div>
+                        <div v-if="order.customer_contact" class="flex justify-between">
+                            <span class="text-muted-foreground">Contact</span>
+                            <span class="font-medium">{{ order.customer_contact }}</span>
+                        </div>
+                        <div v-if="order.customer_address" class="flex items-start justify-between gap-4">
+                            <span class="text-muted-foreground flex items-center gap-1 shrink-0">
+                                <MapPin class="h-3 w-3" /> Address
+                            </span>
+                            <span class="font-medium text-right">{{ order.customer_address }}</span>
+                        </div>
                     </div>
                 </div>
-                <div v-else class="px-5 py-3 bg-yellow-50 text-center">
-                    <p class="text-sm font-semibold text-yellow-700">⏳ Payment Pending</p>
-                </div>
-
-                <!-- Notes -->
-                <div v-if="order.notes" class="px-5 py-3 border-t bg-gray-50 text-sm text-gray-600">
-                    <span class="font-semibold">Note:</span> {{ order.notes }}
-                </div>
-
-                <!-- QR Code -->
-                <div class="px-5 py-5 border-t text-center">
-                    <p class="text-xs text-gray-400 mb-3 uppercase tracking-wide">Scan to view this order</p>
-                    <div class="flex justify-center">
-                        <img
-                            :src="`https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=${encodeURIComponent(qrUrl)}&bgcolor=ffffff&color=111111&margin=2`"
-                            alt="Order QR Code"
-                            class="rounded-lg border"
-                            width="140"
-                            height="140"
-                        />
-                    </div>
-                    <p class="text-xs text-gray-400 mt-2 break-all font-mono">{{ qrUrl }}</p>
-                </div>
-
-                <!-- Footer -->
-                <div class="px-5 py-4 bg-gray-900 text-white text-center">
-                    <p class="text-sm font-semibold">Thank you for dining with us!</p>
-                    <p class="text-xs text-gray-400 mt-0.5">Please come again ♥</p>
-                </div>
-
             </div>
 
-            <p class="text-center text-xs text-gray-400 mt-4">Bypass Grill · bypassgrill.baconologies.com</p>
+            <!-- Items -->
+            <div class="rounded-xl border bg-card shadow-sm overflow-hidden">
+                <div class="p-4 border-b flex items-center gap-2">
+                    <Package class="h-4 w-4 text-muted-foreground" />
+                    <h2 class="font-bold text-sm">Items ({{ order.items.length }})</h2>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm min-w-[400px]">
+                        <thead class="bg-muted/50 text-muted-foreground text-xs uppercase tracking-wide">
+                            <tr>
+                                <th class="px-4 py-3 text-left">Product</th>
+                                <th class="px-4 py-3 text-center">Qty</th>
+                                <th class="px-4 py-3 text-right">Unit Price</th>
+                                <th class="px-4 py-3 text-right">Subtotal</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y">
+                            <tr v-for="(item, idx) in order.items" :key="idx" class="hover:bg-muted/20">
+                                <td class="px-4 py-3 font-semibold">{{ item.name }}</td>
+                                <td class="px-4 py-3 text-center font-bold">× {{ item.quantity }}</td>
+                                <td class="px-4 py-3 text-right">{{ fmt(item.unit_price) }}</td>
+                                <td class="px-4 py-3 text-right font-bold">{{ fmt(item.subtotal) }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Totals + Payment -->
+            <div class="grid sm:grid-cols-2 gap-3 sm:gap-4">
+                <div class="rounded-xl border bg-card shadow-sm p-4 space-y-2">
+                    <h3 class="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                        <Receipt class="h-3.5 w-3.5" /> Totals
+                    </h3>
+                    <div class="space-y-1.5 text-sm">
+                        <div class="flex justify-between">
+                            <span class="text-muted-foreground">Subtotal</span>
+                            <span>{{ fmt(order.subtotal) }}</span>
+                        </div>
+                        <div v-if="order.discount_amount > 0" class="flex justify-between text-red-500">
+                            <span>Discount</span>
+                            <span>−{{ fmt(order.discount_amount) }}</span>
+                        </div>
+                        <div v-if="order.tax_amount > 0" class="flex justify-between">
+                            <span class="text-muted-foreground">Tax</span>
+                            <span>{{ fmt(order.tax_amount) }}</span>
+                        </div>
+                        <div class="flex justify-between font-black text-base border-t pt-2">
+                            <span>Total</span>
+                            <span>{{ fmt(order.total_amount) }}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="rounded-xl border bg-card shadow-sm p-4 space-y-3">
+                    <h3 class="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                        <CreditCard class="h-3.5 w-3.5" /> Payment
+                    </h3>
+                    <div v-if="order.payment" class="space-y-1.5 text-sm">
+                        <div class="flex justify-between">
+                            <span class="text-muted-foreground">Method</span>
+                            <span class="font-medium">{{ order.payment.method }}</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-muted-foreground">Amount Paid</span>
+                            <span class="font-medium">{{ fmt(order.payment.amount) }}</span>
+                        </div>
+                        <div v-if="order.payment.change > 0" class="flex justify-between font-bold text-green-600">
+                            <span>Change</span>
+                            <span>{{ fmt(order.payment.change) }}</span>
+                        </div>
+                    </div>
+                    <div v-else class="text-sm font-semibold text-yellow-600">Payment Pending</div>
+                </div>
+            </div>
+
+            <!-- Notes -->
+            <div v-if="order.notes" class="rounded-xl border bg-card shadow-sm p-4">
+                <p class="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">Notes</p>
+                <p class="text-sm">{{ order.notes }}</p>
+            </div>
+
+            <p class="text-center text-xs text-muted-foreground pt-2 pb-4">
+                Thank you for dining with us ♥ · bypassgrill.baconologies.com
+            </p>
         </div>
     </div>
 </template>

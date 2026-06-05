@@ -55,10 +55,9 @@ class PrintJobService
                     'useTLS'  => true,
                 ]);
 
-                $pusher->triggerBatch([
-                    ['channel' => 'orders', 'name' => 'App\\Events\\NewReceiptEvent', 'data' => ['receipt' => $receiptPayload]],
-                    ['channel' => 'orders', 'name' => 'print',                        'data' => ['receipt' => $receiptPayload]],
-                ]);
+                // Single event only — Android binds to both names, so sending
+                // both would cause the receipt to print twice.
+                $pusher->trigger('orders', 'print', ['receipt' => $receiptPayload]);
 
                 $delivered = true;
             }

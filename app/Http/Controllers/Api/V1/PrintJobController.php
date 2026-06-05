@@ -107,15 +107,13 @@ class PrintJobController extends Controller
                 'useTLS'   => true,
             ]);
 
-            // Send with both event names — Android binds to both
-            $pusher->triggerBatch([
-                ['channel' => $data['channel'], 'name' => 'App\\Events\\NewReceiptEvent', 'data' => ['receipt' => $payload]],
-                ['channel' => $data['channel'], 'name' => 'print',                        'data' => ['receipt' => $payload]],
-            ]);
+            // Single event only — Android binds to both names, so sending
+            // both would cause the receipt to print twice.
+            $pusher->trigger($data['channel'], 'print', ['receipt' => $payload]);
 
             return response()->json([
                 'ok'      => true,
-                'message' => "Test receipt sent to channel \"{$data['channel']}\" with events: \"App\\\\Events\\\\NewReceiptEvent\" and \"print\".",
+                'message' => "Test receipt sent to channel \"{$data['channel']}\" (event: \"print\").",
             ]);
         } catch (\Throwable $e) {
             return response()->json([
