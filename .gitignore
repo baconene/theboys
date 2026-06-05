@@ -27,3 +27,10 @@ yarn-error.log
 /.nova
 /.vscode
 /.zed
+
+# Brand assets (per-deployment — kept out of git so the same code can ship
+# as Bypass Grill, Load Cafe, etc. without committing brand-specific values)
+/storage/app/brand_name.txt
+/storage/app/public/logo
+/storage/app/private/logo
+/public/logo

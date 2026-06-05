@@ -15,12 +15,26 @@ defineOptions({
 
 const props = defineProps<{
     currentLogoUrl: string | null
+    brandName: string
 }>()
 
 const preview = ref<string | null>(props.currentLogoUrl)
 const file = ref<File | null>(null)
 const uploading = ref(false)
 const dropping = ref(false)
+
+const brandName = ref(props.brandName)
+const savingName = ref(false)
+
+const saveName = () => {
+    savingName.value = true
+    router.post('/settings/logo/name', { brand_name: brandName.value }, {
+        preserveScroll: true,
+        onSuccess: () => toast.success('Brand name updated'),
+        onError: (errors) => toast.error(Object.values(errors)[0] as string ?? 'Failed to save name'),
+        onFinish: () => { savingName.value = false },
+    })
+}
 
 const onFile = (e: Event) => {
     const f = (e.target as HTMLInputElement).files?.[0]
@@ -65,8 +79,36 @@ const removeLogo = () => {
 
     <div class="space-y-6">
         <div>
-            <h2 class="text-base font-semibold">Logo</h2>
-            <p class="text-sm text-muted-foreground mt-0.5">Upload a custom logo for the sidebar and login page.</p>
+            <h2 class="text-base font-semibold">Logo &amp; Brand</h2>
+            <p class="text-sm text-muted-foreground mt-0.5">Customise the logo image and brand name shown across the app.</p>
+        </div>
+
+        <!-- Brand name -->
+        <div class="rounded-xl border bg-card shadow-sm p-5 space-y-4">
+            <h3 class="font-semibold text-sm">Brand Name</h3>
+            <p class="text-xs text-muted-foreground -mt-2">
+                The text shown next to the logo in the sidebar and login page.
+            </p>
+            <div class="flex flex-col sm:flex-row sm:items-end gap-3">
+                <div class="flex-1">
+                    <label class="text-xs font-medium text-muted-foreground block mb-1">Name</label>
+                    <input
+                        v-model="brandName"
+                        type="text"
+                        maxlength="50"
+                        placeholder="e.g. Bypass Grill"
+                        class="w-full sm:max-w-xs rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                    />
+                </div>
+                <button
+                    @click="saveName"
+                    :disabled="savingName"
+                    class="rounded-lg bg-primary px-5 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
+                >
+                    {{ savingName ? 'Saving…' : 'Save Name' }}
+                </button>
+            </div>
+            <p class="text-xs text-muted-foreground">Leave blank and save to fall back to the default app name.</p>
         </div>
 
         <!-- Upload zone -->
@@ -130,7 +172,7 @@ const removeLogo = () => {
                             d="M17.2 5.633 8.6.855 0 5.633v26.51l16.2 9 16.2-9v-8.442l7.6-4.223V9.856l-8.6-4.777-8.6 4.777V18.3l-5.6 3.111V5.633ZM38 18.301l-5.6 3.11v-6.157l5.6-3.11V18.3Zm-1.06-7.856-5.54 3.078-5.54-3.079 5.54-3.078 5.54 3.079ZM24.8 18.3v-6.157l5.6 3.111v6.158L24.8 18.3Zm-1 1.732 5.54 3.078-13.14 7.302-5.54-3.078 13.14-7.3v-.002Zm-16.2 7.89 7.6 4.222V38.3L2 30.966V7.92l5.6 3.111v16.892ZM8.6 9.3 3.06 6.222 8.6 3.143l5.54 3.08L8.6 9.3Zm21.8 15.51-13.2 7.334V38.3l13.2-7.334v-6.156ZM9.6 11.034l5.6-3.11v14.6l-5.6 3.11v-14.6Z" />
                     </svg>
                 </div>
-                <span class="text-sm font-semibold text-sidebar-foreground">Bypass Grill</span>
+                <span class="text-sm font-semibold text-sidebar-foreground">{{ brandName || 'Bypass Grill' }}</span>
             </div>
             <p class="text-xs text-muted-foreground">This is how the logo appears in the sidebar.</p>
         </div>
