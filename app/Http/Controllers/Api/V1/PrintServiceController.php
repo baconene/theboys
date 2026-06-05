@@ -44,6 +44,13 @@ class PrintServiceController extends Controller
         $channel = ($data['print_channel'] ?? '') ?: 'orders';
         unset($data['print_channel']);   // keep the core update independent of the column
 
+        // These columns are NOT NULL in the DB; empty inputs arrive as null
+        // (ConvertEmptyStringsToNull middleware) — coalesce to '' to avoid a
+        // 1048 "Column cannot be null" integrity violation.
+        foreach (['print_store_name', 'print_store_address', 'print_store_phone', 'print_footer'] as $field) {
+            $data[$field] = $data[$field] ?? '';
+        }
+
         try {
             // Core settings — these columns always exist, so this can never fail on schema.
             $setting = PrintServiceSetting::getSetting();
