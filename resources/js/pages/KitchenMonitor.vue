@@ -126,8 +126,17 @@ const fetchOrders = async () => {
     } catch { /* silent */ }
 }
 
-onMounted(() => { pollInterval = setInterval(fetchOrders, 5000) })
-onUnmounted(() => { if (pollInterval) clearInterval(pollInterval) })
+const onVisible = () => { if (document.visibilityState === 'visible') fetchOrders() }
+
+onMounted(() => {
+    fetchOrders()                                   // immediate first load — no 5s blank wait
+    pollInterval = setInterval(fetchOrders, 3000)   // poll every 3s
+    document.addEventListener('visibilitychange', onVisible)
+})
+onUnmounted(() => {
+    if (pollInterval) clearInterval(pollInterval)
+    document.removeEventListener('visibilitychange', onVisible)
+})
 
 const updateStatus = async (orderId: number, status: string) => {
     updatingId.value = orderId

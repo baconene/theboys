@@ -9,6 +9,8 @@ export const useCartStore = defineStore('cart', () => {
     const customerName = ref('')
     const customerContact = ref('')
     const customerAddress = ref('')
+    // When set, the cart is editing an existing pending order (Modify flow)
+    const editingOrderId = ref<number | null>(null)
 
     const subtotal = computed(() =>
         items.value.reduce((sum, item) => sum + item.unit_price * item.quantity, 0)
@@ -48,6 +50,7 @@ export const useCartStore = defineStore('cart', () => {
         customerName.value = ''
         customerContact.value = ''
         customerAddress.value = ''
+        editingOrderId.value = null
     }
 
     return {
@@ -58,6 +61,7 @@ export const useCartStore = defineStore('cart', () => {
         customerName,
         customerContact,
         customerAddress,
+        editingOrderId,
         subtotal,
         total,
         addItem,

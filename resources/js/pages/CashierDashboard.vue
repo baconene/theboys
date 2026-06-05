@@ -173,6 +173,35 @@ const submitOrder = async () => {
     if (cartStore.items.length === 0) return
     submitting.value = true
     try {
+        const itemsPayload = cartStore.items.map((item) => ({
+            product_id: item.product_id,
+            quantity: item.quantity,
+            modifiers: item.modifiers ?? [],
+        }))
+
+        // ── Modify flow: update an existing pending order instead of creating a new one ──
+        if (cartStore.editingOrderId) {
+            try {
+                const res = await api.put(`/api/v1/orders/${cartStore.editingOrderId}`, {
+                    notes: '',
+                    discount_amount: cartStore.discount,
+                    items: itemsPayload,
+                })
+                const raw = res.data.data ?? res.data
+                pendingOrder.value = { ...raw, total_amount: parseFloat(raw.total_amount ?? 0) }
+            } catch (err: any) {
+                toast.error(err.response?.data?.message ?? 'Failed to update order')
+                return
+            }
+            cartOpen.value = false
+            await loadTenders()
+            selectedTenderId.value = tenders.value[0]?.id ?? null
+            amountTendered.value = (pendingOrder.value?.total_amount ?? 0).toFixed(2)
+            reference.value = ''
+            paymentOpen.value = true
+            return
+        }
+
         const payload = {
             order_type: cartStore.orderType,
             table_number: cartStore.tableNumber,
@@ -181,11 +210,7 @@ const submitOrder = async () => {
             customer_address: cartStore.customerAddress || null,
             discount_amount: cartStore.discount,
             notes: '',
-            items: cartStore.items.map((item) => ({
-                product_id: item.product_id,
-                quantity: item.quantity,
-                modifiers: item.modifiers ?? [],
-            })),
+            items: itemsPayload,
         }
 
         // If already offline before the call — skip network entirely
@@ -294,17 +319,42 @@ const skipPayment = () => {
 }
 
 // Close the payment modal without finalizing — the order stays as a pending
-// payment (already saved) so the customer can keep adding to it later.
+// payment (already saved). Cart is cleared; reopen later via Pending Payments → Modify.
 const holdOrder = () => {
     const o = pendingOrder.value
-    const isExisting = o?._isExistingOrder ?? false
     const queueOrId = o?._offlineQueue ?? o?.queue_number ?? o?.id
     toast.info(`Order #${queueOrId} held — find it under Pending Payments.`)
-    if (!isExisting) cartStore.clear()
+    cartStore.clear()
     paymentOpen.value = false
     pendingOrder.value = null
     paymentDone.value = false
     completedOrder.value = null
+}
+
+// Load a pending order back into the cart so the cashier can add/remove items
+// before the customer pays. Submitting updates the existing order (Modify flow).
+const modifyUnpaidOrder = (order: UnpaidOrder) => {
+    cartStore.clear()
+    cartStore.editingOrderId = order.id
+    cartStore.orderType = order.order_type
+    cartStore.tableNumber = order.table_number
+    cartStore.customerName = order.customer_name ?? ''
+    cartStore.customerContact = order.customer_contact ?? ''
+    cartStore.customerAddress = order.customer_address ?? ''
+    cartStore.discount = parseFloat(order.discount_amount) || 0
+    order.items.forEach((it) => {
+        cartStore.items.push({
+            id: it.product.id,
+            product_id: it.product.id,
+            name: it.product.name,
+            unit_price: parseFloat(it.unit_price),
+            quantity: it.quantity,
+            modifiers: [],
+        })
+    })
+    unpaidOrdersOpen.value = false
+    cartOpen.value = true
+    toast.info(`Modifying order #${order.queue_number ?? order.id}`)
 }
 
 // Cancel (void) the just-placed order entirely.
@@ -625,7 +675,8 @@ onMounted(loadTenders)
                     :disabled="cartStore.items.length === 0 || submitting"
                     class="w-full rounded-lg bg-primary py-3 text-sm font-bold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                    {{ submitting ? 'Placing Order…' : `Place Order — ${formatPrice(cartStore.total)}` }}
+                    <template v-if="submitting">{{ cartStore.editingOrderId ? 'Updating Order…' : 'Placing Order…' }}</template>
+                    <template v-else>{{ cartStore.editingOrderId ? 'Update Order' : 'Place Order' }} — {{ formatPrice(cartStore.total) }}</template>
                 </button>
                 <button
                     @click="cartStore.clear"
@@ -1032,12 +1083,20 @@ onMounted(loadTenders)
                                 </div>
                                 <div class="text-right shrink-0">
                                     <p class="font-bold text-primary">{{ formatPrice(parseFloat(order.total_amount)) }}</p>
-                                    <button
-                                        @click="selectUnpaidOrder(order)"
-                                        class="mt-1.5 rounded-lg bg-green-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-green-700 transition"
-                                    >
-                                        Pay Now
-                                    </button>
+                                    <div class="mt-1.5 flex items-center gap-1.5 justify-end">
+                                        <button
+                                            @click="modifyUnpaidOrder(order)"
+                                            class="rounded-lg border px-3 py-1.5 text-xs font-bold hover:bg-muted transition"
+                                        >
+                                            Modify
+                                        </button>
+                                        <button
+                                            @click="selectUnpaidOrder(order)"
+                                            class="rounded-lg bg-green-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-green-700 transition"
+                                        >
+                                            Pay Now
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         </div>
