@@ -10,11 +10,18 @@ use Pusher\Pusher;
 
 class PrintJobService
 {
+    public function queueForOrder(Order $order): PrintJob
+    {
+        return $this->createAndDeliver($order, 'manual', null);
+    }
+
+    /** @deprecated Use queueForOrder() — kept for backwards compat */
     public function queueForNewOrder(Order $order): PrintJob
     {
         return $this->createAndDeliver($order, 'new_order', null);
     }
 
+    /** @deprecated Use queueForOrder() — kept for backwards compat */
     public function queueForStatusChange(Order $order, string $newStatus): PrintJob
     {
         return $this->createAndDeliver($order, 'status_change', $newStatus);
@@ -28,7 +35,7 @@ class PrintJobService
 
         $job = PrintJob::create([
             'order_id'       => $order->id,
-            'trigger'        => $trigger,
+            'trigger'        => $trigger === 'manual' ? 'new_order' : $trigger,
             'trigger_status' => $triggerStatus,
             'status'         => 'pending',
             'receipt_data'   => $receiptPayload,
@@ -36,9 +43,7 @@ class PrintJobService
 
         $delivered = false;
 
-        // ── Path 1: Pusher Channels (WebSocket) — direct SDK, same as testChannels endpoint ──
-        // Using Pusher SDK directly bypasses BROADCAST_CONNECTION config entirely,
-        // so it works regardless of whether config:clear has been run.
+        // ── Pusher Channels — direct SDK (same as testChannels, bypasses BROADCAST_CONNECTION) ──
         try {
             $key    = config('broadcasting.connections.pusher.key');
             $secret = config('broadcasting.connections.pusher.secret');
@@ -57,14 +62,9 @@ class PrintJobService
 
                 $delivered = true;
             }
-        } catch (\Throwable) {
-            // Channels not configured or unreachable — fall through to Beams
-        }
+        } catch (\Throwable) { /* fall through to Beams */ }
 
-        // ── Path 2: Pusher Beams (FCM push) — background wake-up ────────────────
-        // Note: FCM data values are strings only, so we can't embed nested JSON here.
-        // We send only a notification (title + body) + print_job_id so the Android
-        // can fetch the receipt from the API if needed.
+        // ── Pusher Beams — FCM wake-up ping ──────────────────────────────────────────
         try {
             $instanceId = config('broadcasting.beams.instance_id');
             $secretKey  = config('broadcasting.beams.secret_key');
@@ -75,32 +75,25 @@ class PrintJobService
                     'secretKey'  => $secretKey,
                 ]);
 
-                $beams->publishToInterests(
-                    ['print-jobs'],
-                    [
-                        'fcm' => [
-                            'notification' => [
-                                'title' => $this->notificationTitle($trigger, $triggerStatus, $order->id),
-                                'body'  => $this->notificationBody($order),
-                            ],
-                            'data' => [
-                                'print_job_id' => (string) $job->id,
-                            ],
+                $beams->publishToInterests(['print-jobs'], [
+                    'fcm' => [
+                        'notification' => [
+                            'title' => "Order #{$order->id} — Print Receipt",
+                            'body'  => $this->notificationBody($order),
                         ],
-                    ]
-                );
+                        'data' => ['print_job_id' => (string) $job->id],
+                    ],
+                ]);
 
                 $delivered = true;
             }
-        } catch (\Throwable) {
-            // Non-critical
-        }
+        } catch (\Throwable) { /* non-critical */ }
 
         $job->update([
-            'status'   => $delivered ? 'sent' : 'failed',
-            'sent_at'  => $delivered ? now() : null,
-            'attempts' => 1,
-            'failed_reason' => $delivered ? null : 'No delivery channel configured (no Pusher Channels key and no Beams credentials)',
+            'status'        => $delivered ? 'sent' : 'failed',
+            'sent_at'       => $delivered ? now() : null,
+            'attempts'      => 1,
+            'failed_reason' => $delivered ? null : 'No delivery channel configured.',
         ]);
 
         return $job;
@@ -110,17 +103,29 @@ class PrintJobService
     {
         $settings = PrintServiceSetting::getSetting();
 
+        // Get the most recent completed payment
+        $payment        = $order->payments->where('status', 'completed')->first()
+                       ?? $order->payments->sortByDesc('created_at')->first();
+        $amountTendered = (float) ($payment?->amount ?? $order->total_amount);
+        $change         = max(0.0, $amountTendered - (float) $order->total_amount);
+        $paymentMethod  = $payment?->tender?->name ?? $payment?->method ?? null;
+
         return [
             'store' => [
                 'name'    => $settings->print_store_name ?: config('app.name'),
                 'address' => $settings->print_store_address,
                 'phone'   => $settings->print_store_phone,
-                'footer'  => $settings->print_footer ?: 'Thank you!',
+                'footer'  => $settings->print_footer ?: 'Thank you for dining with us!',
             ],
-            'receipt' => [
-                'number'  => (string) $order->id,
-                'date'    => $order->created_at?->setTimezone('Asia/Manila')->format('M d, Y h:i A'),
-                'cashier' => $order->user?->name,
+            'order' => [
+                'number'   => (string) $order->id,
+                'type'     => $this->formatOrderType($order->order_type),
+                'table'    => $order->table_number,
+                'date'     => $order->created_at?->setTimezone('Asia/Manila')->format('M d, Y h:i A'),
+                'cashier'  => $order->user?->name,
+                'customer' => $order->customer_name,
+                'contact'  => $order->customer_contact,
+                'address'  => $order->customer_address,
             ],
             'items' => $order->items->map(fn ($item) => [
                 'name'  => $item->product?->name ?? 'Unknown',
@@ -130,19 +135,27 @@ class PrintJobService
             ])->values()->all(),
             'totals' => [
                 'subtotal' => (float) $order->subtotal,
-                'tax'      => (float) $order->tax_amount,
                 'discount' => (float) $order->discount_amount,
+                'tax'      => (float) $order->tax_amount,
                 'total'    => (float) $order->total_amount,
             ],
-            'payment' => null,
+            'payment' => $payment ? [
+                'method' => $paymentMethod,
+                'amount' => $amountTendered,
+                'change' => $change,
+            ] : null,
+            'qr_url' => rtrim(config('app.url'), '/') . '/public/orders/' . $order->id,
         ];
     }
 
-    private function notificationTitle(string $trigger, ?string $status, int $orderId): string
+    private function formatOrderType(string $type): string
     {
-        return $trigger === 'new_order'
-            ? "New Order #$orderId — Print Required"
-            : "Order #$orderId — " . ucfirst($status ?? 'Updated');
+        return match ($type) {
+            'dine_in'  => 'Dine In',
+            'takeout'  => 'Takeout',
+            'delivery' => 'Delivery',
+            default    => ucfirst(str_replace('_', ' ', $type)),
+        };
     }
 
     private function notificationBody(Order $order): string

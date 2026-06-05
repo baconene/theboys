@@ -19,6 +19,11 @@ Route::inertia('/', 'Welcome', [
     'canRegister' => Features::enabled(Features::registration()),
 ])->name('home');
 
+// Public order view — no auth required (linked from receipt QR code)
+Route::get('/public/orders/{id}', [\App\Http\Controllers\PublicOrderController::class, 'show'])
+    ->where('id', '[0-9]+')
+    ->name('public.orders.show');
+
 Route::get('menu/{id}', [MenuController::class, 'show'])
     ->where('id', '[0-9]+')
     ->name('menu.show');
