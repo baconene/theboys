@@ -31,7 +31,10 @@ class PrintJobService
     {
         $order->loadMissing(['items.product', 'user', 'queueNumber', 'payments.tender']);
 
-        $channel        = optional(PrintServiceSetting::getSetting())->print_channel ?: 'orders';
+        // Channel: column value, then cached fallback (set when the column is
+        // unavailable), then default. Works whether or not the migration ran.
+        $setting        = PrintServiceSetting::getSetting();
+        $channel        = ($setting->getAttribute('print_channel') ?: \Illuminate\Support\Facades\Cache::get('print_service_channel')) ?: 'orders';
         $receiptPayload = $this->buildAndroidReceipt($order);
 
         // Build the tracking record in memory first, but DO NOT let a missing
