@@ -293,6 +293,46 @@ const skipPayment = () => {
     paymentDone.value = true
 }
 
+// Close the payment modal without finalizing — the order stays as a pending
+// payment (already saved) so the customer can keep adding to it later.
+const holdOrder = () => {
+    const o = pendingOrder.value
+    const isExisting = o?._isExistingOrder ?? false
+    const queueOrId = o?._offlineQueue ?? o?.queue_number ?? o?.id
+    toast.info(`Order #${queueOrId} held — find it under Pending Payments.`)
+    if (!isExisting) cartStore.clear()
+    paymentOpen.value = false
+    pendingOrder.value = null
+    paymentDone.value = false
+    completedOrder.value = null
+}
+
+// Cancel (void) the just-placed order entirely.
+const cancellingOrder = ref(false)
+const cancelPendingOrder = async () => {
+    const o = pendingOrder.value
+    if (!o) return
+    if (!confirm('Cancel this order? This cannot be undone.')) return
+
+    cancellingOrder.value = true
+    try {
+        // Existing/online orders have a real server id — void them on the server.
+        if (!isOfflineOrder() && o.id) {
+            await api.post(`/api/v1/orders/${o.id}/cancel`, { reason: 'Cancelled at POS' })
+        }
+        toast.success(`Order #${o._offlineQueue ?? o.queue_number ?? o.id} cancelled.`)
+        if (!(o._isExistingOrder ?? false)) cartStore.clear()
+        paymentOpen.value = false
+        pendingOrder.value = null
+        paymentDone.value = false
+        completedOrder.value = null
+    } catch (err: any) {
+        toast.error(err.response?.data?.message ?? 'Failed to cancel order')
+    } finally {
+        cancellingOrder.value = false
+    }
+}
+
 const closeAndClear = () => {
     const o = completedOrder.value
     const isExisting = pendingOrder.value?._isExistingOrder ?? false
@@ -832,10 +872,15 @@ onMounted(loadTenders)
                             <div class="flex h-9 w-9 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30">
                                 <CreditCard class="h-5 w-5 text-green-600" />
                             </div>
-                            <div>
+                            <div class="flex-1 min-w-0">
                                 <h3 class="font-bold">Collect Payment</h3>
                                 <p class="text-xs text-muted-foreground">Order #{{ pendingOrder._offlineQueue ?? pendingOrder.queue_number ?? pendingOrder.id }}</p>
                             </div>
+                            <!-- Hold: close temporarily, order stays pending so they can add more -->
+                            <button @click="holdOrder" title="Hold — close & add more later"
+                                class="rounded-full p-1.5 hover:bg-muted text-muted-foreground transition shrink-0">
+                                <X class="h-5 w-5" />
+                            </button>
                         </div>
 
                         <div class="p-5 space-y-5">
@@ -910,11 +955,26 @@ onMounted(loadTenders)
                             >
                                 {{ paymentSubmitting ? 'Processing…' : 'Confirm Payment' }}
                             </button>
+                            <div class="grid grid-cols-2 gap-2">
+                                <button
+                                    @click="skipPayment"
+                                    class="rounded-lg border bg-background py-2 text-sm font-medium hover:bg-muted transition"
+                                >
+                                    Skip — Pay Later
+                                </button>
+                                <button
+                                    @click="holdOrder"
+                                    class="rounded-lg border bg-background py-2 text-sm font-medium hover:bg-muted transition"
+                                >
+                                    Hold — Add More
+                                </button>
+                            </div>
                             <button
-                                @click="skipPayment"
-                                class="w-full rounded-lg border bg-background py-2 text-sm font-medium hover:bg-muted transition"
+                                @click="cancelPendingOrder"
+                                :disabled="cancellingOrder"
+                                class="w-full rounded-lg border border-red-200 dark:border-red-900/50 text-red-600 py-2 text-sm font-medium hover:bg-red-50 dark:hover:bg-red-950/20 disabled:opacity-50 transition"
                             >
-                                Skip — Pay Later
+                                {{ cancellingOrder ? 'Cancelling…' : 'Cancel Order' }}
                             </button>
                         </div>
                     </template>

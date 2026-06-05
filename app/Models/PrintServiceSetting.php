@@ -17,6 +17,7 @@ class PrintServiceSetting extends Model
         'print_footer',
         'print_auto_print',
         'print_enabled',
+        'print_channel',
     ];
 
     protected $casts = [
@@ -36,6 +37,7 @@ class PrintServiceSetting extends Model
             'print_footer'        => '',
             'print_auto_print'    => false,
             'print_enabled'       => false,
+            'print_channel'       => 'orders',
         ]);
     }
 }

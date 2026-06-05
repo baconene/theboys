@@ -31,6 +31,7 @@ class PrintJobService
     {
         $order->loadMissing(['items.product', 'user', 'queueNumber', 'payments.tender']);
 
+        $channel        = PrintServiceSetting::getSetting()->print_channel ?: 'orders';
         $receiptPayload = $this->buildAndroidReceipt($order);
 
         $job = PrintJob::create([
@@ -57,7 +58,7 @@ class PrintJobService
 
                 // Single event only — Android binds to both names, so sending
                 // both would cause the receipt to print twice.
-                $pusher->trigger('orders', 'print', ['receipt' => $receiptPayload]);
+                $pusher->trigger($channel, 'print', ['receipt' => $receiptPayload]);
 
                 $delivered = true;
             }

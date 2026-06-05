@@ -23,6 +23,7 @@ interface PrintServiceSettings {
     print_footer: string
     print_auto_print: boolean
     print_enabled: boolean
+    print_channel: string
 }
 
 const props = defineProps<{
@@ -57,8 +58,7 @@ const clearConfigCache = async () => {
     }
 }
 
-// Pusher Channels test (primary — WebSocket)
-const channelsTest = ref({ channel: 'orders' })
+// Pusher Channels test (primary — WebSocket) — uses the channel from the form above
 const channelsTesting = ref(false)
 const channelsResult = ref<{ ok: boolean; message: string } | null>(null)
 
@@ -66,7 +66,7 @@ const sendTestChannels = async () => {
     channelsTesting.value = true
     channelsResult.value = null
     try {
-        const res = await api.post('/api/v1/print-jobs/test-channels', channelsTest.value)
+        const res = await api.post('/api/v1/print-jobs/test-channels', { channel: form.value.print_channel || 'orders' })
         channelsResult.value = { ok: true, message: res.data.message }
     } catch (err: any) {
         channelsResult.value = { ok: false, message: err.response?.data?.message ?? 'Request failed' }
@@ -174,6 +174,32 @@ onMounted(() => {
                     <input type="checkbox" v-model="form.print_enabled" class="sr-only peer" />
                     <div class="w-10 h-5 bg-muted rounded-full peer peer-checked:bg-primary transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-5"></div>
                 </label>
+            </div>
+        </div>
+
+        <!-- Print Channel (Pusher WebSocket) -->
+        <div class="rounded-xl border bg-card shadow-sm p-5 space-y-3">
+            <h3 class="font-semibold text-sm flex items-center gap-2">
+                <Wifi class="h-4 w-4" /> Print Channel
+            </h3>
+            <p class="text-xs text-muted-foreground -mt-1">
+                The Pusher WebSocket channel receipts are broadcast to. Point different outlets at
+                different channels — e.g. <code class="bg-muted px-1 rounded">BypassGrill</code> or
+                <code class="bg-muted px-1 rounded">Load-Cafe</code> — and set the Android app's
+                <code class="bg-muted px-1 rounded">ws_channel</code> to match.
+            </p>
+            <div>
+                <label class="text-xs font-medium text-muted-foreground block mb-1">Channel name</label>
+                <input
+                    v-model="form.print_channel"
+                    type="text"
+                    placeholder="orders"
+                    class="w-full sm:max-w-xs rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+                <p class="text-xs text-muted-foreground mt-1">
+                    Letters, numbers, dots, dashes and underscores only. Leave blank to use
+                    <code class="bg-muted px-1 rounded">orders</code>.
+                </p>
             </div>
         </div>
 
@@ -384,8 +410,9 @@ onMounted(() => {
             <div class="flex items-end gap-3">
                 <div class="flex-1 max-w-[200px]">
                     <label class="text-xs font-medium text-muted-foreground block mb-1">Channel</label>
-                    <input v-model="channelsTest.channel" type="text" placeholder="orders"
-                        class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                    <input :value="form.print_channel || 'orders'" type="text" readonly
+                        class="w-full rounded-lg border bg-muted/40 px-3 py-2 text-sm text-muted-foreground cursor-not-allowed" />
+                    <p class="text-[10px] text-muted-foreground mt-1">Set above in “Print Channel”</p>
                 </div>
                 <button
                     @click="sendTestChannels"

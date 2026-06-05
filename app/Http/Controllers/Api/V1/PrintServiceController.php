@@ -30,7 +30,11 @@ class PrintServiceController extends Controller
             'print_footer'        => 'nullable|string|max:255',
             'print_auto_print'    => 'boolean',
             'print_enabled'       => 'boolean',
+            'print_channel'       => 'nullable|string|max:100|regex:/^[A-Za-z0-9._-]+$/',
         ]);
+
+        // Default to "orders" if left blank
+        $data['print_channel'] = ($data['print_channel'] ?? '') ?: 'orders';
 
         $setting = PrintServiceSetting::getSetting();
         $setting->update($data);
