@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
+import { ref, onMounted, onBeforeUnmount, computed, markRaw } from 'vue'
 import { Head } from '@inertiajs/vue3'
 import gsap from 'gsap'
 import {
@@ -72,10 +72,10 @@ const activeNode = computed(() => {
 })
 
 const nodes = [
-    { label: 'Web App',      sub: 'Laravel + Vue POS',  icon: Globe,      color: '#3b82f6' },
-    { label: 'WebSocket',    sub: 'Pusher Channels',    icon: Radio,      color: '#8b5cf6' },
-    { label: 'Printing App', sub: 'Android Service',    icon: Smartphone, color: '#10b981' },
-    { label: 'Printer',      sub: 'Bluetooth Thermal',  icon: Printer,    color: '#f59e0b' },
+    { label: 'Web App',      sub: 'Laravel + Vue POS',  icon: markRaw(Globe),      color: '#3b82f6' },
+    { label: 'WebSocket',    sub: 'Pusher Channels',    icon: markRaw(Radio),      color: '#8b5cf6' },
+    { label: 'Printing App', sub: 'Android Service',    icon: markRaw(Smartphone), color: '#10b981' },
+    { label: 'Printer',      sub: 'Bluetooth Thermal',  icon: markRaw(Printer),    color: '#f59e0b' },
 ]
 
 // ── GSAP refs ───────────────────────────────────────────────────────────────────
@@ -179,9 +179,9 @@ const onKey = (e: KeyboardEvent) => {
 
 onMounted(() => {
     window.addEventListener('keydown', onKey)
-    // Intro entrance
-    gsap.from('.arch-node', { y: 30, opacity: 0, duration: 0.7, stagger: 0.12, ease: 'power3.out', delay: 0.2 })
-    gsap.from('.arch-connector', { scaleX: 0, opacity: 0, duration: 0.5, stagger: 0.12, ease: 'power2.out', delay: 0.5, transformOrigin: 'left center' })
+    // Intro entrance — clearProps ensures elements never get stuck hidden
+    gsap.from('.arch-node', { y: 30, opacity: 0, duration: 0.7, stagger: 0.12, ease: 'power3.out', delay: 0.2, clearProps: 'opacity,transform' })
+    gsap.from('.arch-connector', { opacity: 0, duration: 0.5, stagger: 0.12, ease: 'power2.out', delay: 0.5, clearProps: 'opacity,transform' })
     animateTextIn()
 })
 
