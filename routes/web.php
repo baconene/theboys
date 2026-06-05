@@ -24,6 +24,10 @@ Route::get('/public/orders/{id}', [\App\Http\Controllers\PublicOrderController::
     ->where('id', '[0-9]+')
     ->name('public.orders.show');
 
+// Printing architecture — animated explainer of the receipt printing pipeline
+Route::inertia('/printing-architecture', 'PrintingArchitecture')
+    ->name('printing.architecture');
+
 Route::get('menu/{id}', [MenuController::class, 'show'])
     ->where('id', '[0-9]+')
     ->name('menu.show');
