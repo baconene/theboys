@@ -2,11 +2,11 @@
 
 namespace App\Services;
 
-use App\Events\NewReceiptEvent;
 use App\Models\Order;
 use App\Models\PrintJob;
 use App\Models\PrintServiceSetting;
 use Pusher\PushNotifications\PushNotifications;
+use Pusher\Pusher;
 
 class PrintJobService
 {
@@ -36,13 +36,28 @@ class PrintJobService
 
         $delivered = false;
 
-        // ── Path 1: Pusher Channels (WebSocket) — primary delivery ──────────────
-        // Android binds to "App\Events\NewReceiptEvent" on "orders" channel.
-        // Channels sends proper JSON objects so the Android's JsonObject.toString() works.
+        // ── Path 1: Pusher Channels (WebSocket) — direct SDK, same as testChannels endpoint ──
+        // Using Pusher SDK directly bypasses BROADCAST_CONNECTION config entirely,
+        // so it works regardless of whether config:clear has been run.
         try {
-            broadcast(new NewReceiptEvent($receiptPayload));
-            $delivered = true;
-        } catch (\Throwable $e) {
+            $key    = config('broadcasting.connections.pusher.key');
+            $secret = config('broadcasting.connections.pusher.secret');
+            $appId  = config('broadcasting.connections.pusher.app_id');
+
+            if ($key && $secret && $appId) {
+                $pusher = new Pusher($key, $secret, $appId, [
+                    'cluster' => config('broadcasting.connections.pusher.options.cluster', 'ap1'),
+                    'useTLS'  => true,
+                ]);
+
+                $pusher->triggerBatch([
+                    ['channel' => 'orders', 'name' => 'App\\Events\\NewReceiptEvent', 'data' => ['receipt' => $receiptPayload]],
+                    ['channel' => 'orders', 'name' => 'print',                        'data' => ['receipt' => $receiptPayload]],
+                ]);
+
+                $delivered = true;
+            }
+        } catch (\Throwable) {
             // Channels not configured or unreachable — fall through to Beams
         }
 
