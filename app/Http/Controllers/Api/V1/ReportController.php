@@ -3,13 +3,30 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Services\AnalyticsService;
 use App\Services\ReportService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 
 class ReportController extends Controller
 {
-    public function __construct(private ReportService $reportService) {}
+    public function __construct(
+        private ReportService $reportService,
+        private AnalyticsService $analyticsService,
+    ) {}
+
+    public function analytics(): JsonResponse
+    {
+        $this->checkPermission();
+
+        $start = request()->input('start_date', Carbon::now('Asia/Manila')->subDays(30)->toDateString());
+        $end   = request()->input('end_date', Carbon::now('Asia/Manila')->toDateString());
+        $cat   = request()->input('category_id');
+
+        return response()->json(
+            $this->analyticsService->bundle($start, $end, $cat ? (int) $cat : null)
+        );
+    }
 
     public function dailySales(): JsonResponse
     {
