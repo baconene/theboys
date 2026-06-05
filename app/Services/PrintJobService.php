@@ -31,20 +31,23 @@ class PrintJobService
     {
         $order->loadMissing(['items.product', 'user', 'queueNumber', 'payments.tender']);
 
-        $channel        = PrintServiceSetting::getSetting()->print_channel ?: 'orders';
+        $channel        = optional(PrintServiceSetting::getSetting())->print_channel ?: 'orders';
         $receiptPayload = $this->buildAndroidReceipt($order);
 
-        $job = PrintJob::create([
+        // Build the tracking record in memory first, but DO NOT let a missing
+        // print_jobs table block the actual printing — persist best-effort below.
+        $job = new PrintJob([
             'order_id'       => $order->id,
             'trigger'        => $trigger === 'manual' ? 'new_order' : $trigger,
             'trigger_status' => $triggerStatus,
             'status'         => 'pending',
             'receipt_data'   => $receiptPayload,
+            'attempts'       => 1,
         ]);
 
         $delivered = false;
 
-        // ── Pusher Channels — direct SDK (same as testChannels, bypasses BROADCAST_CONNECTION) ──
+        // ── Pusher Channels — direct SDK (the actual print; independent of the DB) ──
         try {
             $key    = config('broadcasting.connections.pusher.key');
             $secret = config('broadcasting.connections.pusher.secret');
@@ -81,7 +84,7 @@ class PrintJobService
                             'title' => "Order #{$order->id} — Print Receipt",
                             'body'  => $this->notificationBody($order),
                         ],
-                        'data' => ['print_job_id' => (string) $job->id],
+                        'data' => ['print_job_id' => (string) ($job->id ?? '')],
                     ],
                 ]);
 
@@ -89,12 +92,14 @@ class PrintJobService
             }
         } catch (\Throwable) { /* non-critical */ }
 
-        $job->update([
-            'status'        => $delivered ? 'sent' : 'failed',
-            'sent_at'       => $delivered ? now() : null,
-            'attempts'      => 1,
-            'failed_reason' => $delivered ? null : 'No delivery channel configured.',
-        ]);
+        // Persist the tracking record — never block printing on a write failure
+        // (e.g. print_jobs table not migrated yet).
+        $job->status        = $delivered ? 'sent' : 'failed';
+        $job->sent_at       = $delivered ? now() : null;
+        $job->failed_reason = $delivered ? null : 'No delivery channel configured.';
+        try {
+            $job->save();
+        } catch (\Throwable) { /* table missing / write failed — printing already happened */ }
 
         return $job;
     }
