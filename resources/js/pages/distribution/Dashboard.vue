@@ -5,7 +5,7 @@ import { toast } from 'vue-sonner'
 import api from '@/utils/api'
 import {
     PieChart, Users, Percent, History, TrendingUp, RefreshCw, Plus, Trash2, Pencil,
-    Download, Save, X,
+    Download, Save, X, HelpCircle,
 } from 'lucide-vue-next'
 
 defineOptions({ layout: { breadcrumbs: [{ title: 'Dashboard', href: '/dashboard' }, { title: 'Profit Sharing', href: '/distribution' }] } })
@@ -22,7 +22,7 @@ const categoryId = ref<number | ''>('')
 const productId = ref<number | ''>('')
 const shareholderId = ref<number | ''>('')
 
-const subTab = ref<'distribution' | 'shareholders' | 'royalties' | 'trends' | 'history'>('distribution')
+const subTab = ref<'distribution' | 'shareholders' | 'royalties' | 'trends' | 'history' | 'help'>('distribution')
 
 const fmt = (v: number) => '₱' + (v ?? 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
@@ -184,16 +184,23 @@ const tabs = [
     { key: 'royalties', label: 'Royalties', icon: Percent },
     { key: 'trends', label: 'Trends', icon: TrendingUp },
     { key: 'history', label: 'History', icon: History },
+    { key: 'help', label: 'Help', icon: HelpCircle },
 ] as const
 </script>
 
 <template>
     <Head title="Profit Sharing" />
 
-    <div class="max-w-6xl mx-auto space-y-4">
-        <div class="flex items-center gap-2">
-            <PieChart class="h-6 w-6 text-primary" />
-            <h1 class="text-xl font-black">Profit Distribution</h1>
+    <div class="w-full space-y-4">
+        <div class="flex items-center justify-between gap-2">
+            <div class="flex items-center gap-2">
+                <PieChart class="h-6 w-6 text-primary" />
+                <h1 class="text-xl font-black">Profit Distribution</h1>
+            </div>
+            <button @click="subTab = 'help'"
+                class="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium text-muted-foreground hover:bg-muted transition">
+                <HelpCircle class="h-4 w-4" /> How it works
+            </button>
         </div>
 
         <!-- Sub-tabs -->
@@ -387,6 +394,103 @@ const tabs = [
                         <tr v-if="!snapshots.length"><td colspan="6" class="px-4 py-8 text-center text-muted-foreground">No snapshots saved yet.</td></tr>
                     </tbody>
                 </table>
+            </div>
+        </template>
+
+        <!-- ── HELP ─────────────────────────────────────────────────────── -->
+        <template v-if="subTab === 'help'">
+            <div class="grid lg:grid-cols-2 gap-4">
+                <!-- Overview -->
+                <div class="rounded-xl border bg-card shadow-sm p-5 space-y-3 lg:col-span-2">
+                    <h3 class="font-bold text-base flex items-center gap-2"><HelpCircle class="h-5 w-5 text-primary" /> What is Profit Sharing?</h3>
+                    <p class="text-sm text-muted-foreground leading-relaxed">
+                        This tool automatically computes how much each <strong>shareholder</strong> receives, how much goes to
+                        <strong>royalty recipients</strong>, and how much the company keeps as <strong>retained earnings</strong> —
+                        calculated directly from your real sales and financial records. Nothing here changes your accounting;
+                        it only reads existing data. Saving a <strong>Snapshot</strong> stores a historical copy for the record.
+                    </p>
+                </div>
+
+                <!-- Basis -->
+                <div class="rounded-xl border bg-card shadow-sm p-5 space-y-3">
+                    <h3 class="font-bold text-sm">Sales vs Profit basis</h3>
+                    <div class="space-y-2 text-sm">
+                        <p><span class="font-semibold text-primary">Sales basis</span> — shares are computed from
+                            <code class="bg-muted px-1 rounded">Net Sales − Refunds</code>. Use when partners are paid on revenue.</p>
+                        <p><span class="font-semibold text-primary">Profit basis</span> — shares are computed from
+                            <code class="bg-muted px-1 rounded">Net Profit</code> (revenue − COGS − operating expenses), reusing the
+                            same figures as your P&amp;L report. Use when partners are paid on actual profit.</p>
+                        <p class="text-xs text-muted-foreground">When you filter Profit basis by a single product or category,
+                            the base becomes that scope's gross profit (net sales − COGS), since operating expenses can't be split per product.</p>
+                    </div>
+                </div>
+
+                <!-- Calculation flow -->
+                <div class="rounded-xl border bg-card shadow-sm p-5 space-y-3">
+                    <h3 class="font-bold text-sm">The calculation, step by step</h3>
+                    <ol class="text-sm space-y-1.5 list-decimal list-inside text-muted-foreground">
+                        <li><strong class="text-foreground">Base amount</strong> — Net Sales (Sales basis) or Net Profit (Profit basis).</li>
+                        <li><strong class="text-foreground">− Royalties</strong> — product/category royalties are deducted first.</li>
+                        <li><strong class="text-foreground">= Distributable</strong> — what's left to split.</li>
+                        <li><strong class="text-foreground">Member shares</strong> — each member gets Distributable × ownership %.</li>
+                        <li><strong class="text-foreground">Company retained</strong> — the remaining percentage stays with the company.</li>
+                    </ol>
+                </div>
+
+                <!-- Worked example -->
+                <div class="rounded-xl border bg-card shadow-sm p-5 space-y-2 lg:col-span-2">
+                    <h3 class="font-bold text-sm">Worked example</h3>
+                    <div class="overflow-x-auto">
+                        <table class="text-sm min-w-[420px]">
+                            <tbody class="[&_td]:py-1 [&_td]:pr-6">
+                                <tr><td class="text-muted-foreground">Net Sales</td><td class="font-bold text-right">₱1,000,000</td></tr>
+                                <tr><td class="text-muted-foreground">− Royalties</td><td class="font-bold text-right text-amber-600">₱50,000</td></tr>
+                                <tr class="border-t"><td class="text-muted-foreground">= Distributable</td><td class="font-bold text-right text-primary">₱950,000</td></tr>
+                                <tr><td class="pl-4">Member 1 — 10%</td><td class="text-right">₱95,000</td></tr>
+                                <tr><td class="pl-4">Member 2 — 20%</td><td class="text-right">₱190,000</td></tr>
+                                <tr><td class="pl-4">Member 3 — 10%</td><td class="text-right">₱95,000</td></tr>
+                                <tr class="border-t"><td>Members total (40%)</td><td class="font-bold text-right">₱380,000</td></tr>
+                                <tr><td class="text-emerald-600">Company retained (60%)</td><td class="font-bold text-right text-emerald-600">₱570,000</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Shareholders -->
+                <div class="rounded-xl border bg-card shadow-sm p-5 space-y-2">
+                    <h3 class="font-bold text-sm flex items-center gap-2"><Users class="h-4 w-4" /> Shareholders</h3>
+                    <ul class="text-sm space-y-1 text-muted-foreground list-disc list-inside">
+                        <li>Add members and set each one's <strong class="text-foreground">ownership %</strong>.</li>
+                        <li>Total active ownership <strong class="text-foreground">cannot exceed 100%</strong> — the tool blocks it.</li>
+                        <li>Whatever isn't allocated automatically becomes the <strong class="text-foreground">company share</strong>.</li>
+                        <li>Set a member to <strong class="text-foreground">inactive</strong> to exclude them without deleting history.</li>
+                        <li>Every change is recorded in the audit log.</li>
+                    </ul>
+                </div>
+
+                <!-- Royalties -->
+                <div class="rounded-xl border bg-card shadow-sm p-5 space-y-2">
+                    <h3 class="font-bold text-sm flex items-center gap-2"><Percent class="h-4 w-4" /> Royalties</h3>
+                    <ul class="text-sm space-y-1 text-muted-foreground list-disc list-inside">
+                        <li>A rule pays a recipient a % of a product's or category's net sales.</li>
+                        <li><code class="bg-muted px-1 rounded">Royalty = Product Net Sales × Royalty %</code> (e.g. ₱500,000 × 5% = ₱25,000).</li>
+                        <li>Recipients are <strong class="text-foreground">dynamic</strong> — any name, optionally linked to a member.</li>
+                        <li>Each rule has an <strong class="text-foreground">effective date</strong> and optional <strong class="text-foreground">expiration</strong>.</li>
+                        <li>Royalties are deducted before member shares are calculated.</li>
+                    </ul>
+                </div>
+
+                <!-- Tips -->
+                <div class="rounded-xl border bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800 p-5 space-y-2 lg:col-span-2">
+                    <h3 class="font-bold text-sm text-amber-800 dark:text-amber-300">Tips</h3>
+                    <ul class="text-sm space-y-1 text-amber-800/90 dark:text-amber-300/90 list-disc list-inside">
+                        <li>Use the <strong>Month / Quarter / Year</strong> shortcuts for quick periods, or pick a custom range.</li>
+                        <li>Only <strong>paid</strong> orders count toward sales — matching your Financial reports.</li>
+                        <li>Click <strong>Snapshot</strong> to freeze a period's result for audit and historical comparison.</li>
+                        <li>Use <strong>CSV</strong> to export the current breakdown for payouts or accounting.</li>
+                        <li>The <strong>Trends</strong> tab shows month-over-month member, company, and royalty earnings.</li>
+                    </ul>
+                </div>
             </div>
         </template>
     </div>
