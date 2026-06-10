@@ -41,8 +41,9 @@ class ProfitDistributionService
                 $base      = $profitBase;
                 $baseLabel = $categoryId || $productId ? 'Gross Profit (scope)' : 'Net Profit';
             } elseif ($basis === 'hybrid') {
-                $base      = round($salesBase + $profitBase, 2);
-                $baseLabel = 'Sales + Profit (Hybrid)';
+                // Hybrid: profit share + each member's linked royalties
+                $base      = $profitBase;
+                $baseLabel = $categoryId || $productId ? 'Gross Profit (scope) — Hybrid' : 'Net Profit — Hybrid';
             } else {
                 $base      = $salesBase;
                 $baseLabel = 'Net Sales';
@@ -50,6 +51,26 @@ class ProfitDistributionService
 
             $distributable = round(max(0, $base - $royalty['total']), 2);
             $alloc = $this->shares->allocate($distributable, $shareholderId);
+
+            // Hybrid: add each member's linked royalties on top of their profit share
+            if ($basis === 'hybrid') {
+                $royaltyByHolder = collect($royalty['by_recipient'])
+                    ->filter(fn ($r) => $r['shareholder_id'] !== null)
+                    ->groupBy('shareholder_id')
+                    ->map(fn ($group) => round(collect($group)->sum('amount'), 2))
+                    ->all();
+
+                $alloc['members'] = array_map(function ($m) use ($royaltyByHolder) {
+                    $royaltyAmt = (float) ($royaltyByHolder[$m['shareholder_id']] ?? 0.0);
+                    return array_merge($m, [
+                        'profit_share'   => $m['amount'],
+                        'royalty_amount' => round($royaltyAmt, 2),
+                        'amount'         => round($m['amount'] + $royaltyAmt, 2),
+                    ]);
+                }, $alloc['members']);
+
+                $alloc['members_total'] = round(array_sum(array_column($alloc['members'], 'amount')), 2);
+            }
 
             return [
                 'basis'        => $basis,
