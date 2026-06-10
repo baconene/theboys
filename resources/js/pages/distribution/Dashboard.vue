@@ -283,7 +283,7 @@ const tabs = [
                     </div>
                     <!-- Hybrid breakdown note -->
                     <div v-if="result.basis === 'hybrid'" class="mt-3 rounded-lg bg-violet-50 dark:bg-violet-950/20 border border-violet-200 dark:border-violet-800 p-2.5 text-xs text-violet-800 dark:text-violet-300">
-                        Hybrid combines each member's <strong>profit share</strong> (ownership % × distributable profit) with any <strong>royalties linked to them</strong> as a recipient. Members with no linked royalty rules receive only their profit share.
+                        Hybrid distributes the full Net Profit to members — each member receives their ownership % of both the <strong>profit pool</strong> ({{ fmt(result.financial_summary.net_profit - result.royalty.total) }}) and the <strong>royalty pool</strong> ({{ fmt(result.royalty.total) }}), shown as two components in the table.
                     </div>
                 </div>
 
@@ -343,8 +343,8 @@ const tabs = [
                     </div>
                 </div>
 
-                <!-- Royalty recipients -->
-                <div v-if="result.royalty.by_recipient.length" class="rounded-xl border bg-card shadow-sm p-4">
+                <!-- Royalty recipients (hidden in hybrid — royalties are rolled into member amounts) -->
+                <div v-if="result.royalty.by_recipient.length && result.basis !== 'hybrid'" class="rounded-xl border bg-card shadow-sm p-4">
                     <h3 class="font-bold text-sm mb-2">Royalty Recipients</h3>
                     <div class="flex flex-wrap gap-2">
                         <span v-for="r in result.royalty.by_recipient" :key="r.recipient_name" class="rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-3 py-1 text-sm font-medium">{{ r.recipient_name }}: {{ fmt(r.amount) }}</span>
@@ -490,10 +490,11 @@ const tabs = [
                         <p><span class="font-semibold text-primary">Profit basis</span> — shares are computed from
                             <code class="bg-muted px-1 rounded">Net Profit</code> (revenue − COGS − operating expenses), reusing the
                             same figures as your P&amp;L report. Use when partners are paid on actual profit.</p>
-                        <p><span class="font-semibold text-violet-600">Hybrid basis</span> — each member's payout is their
-                            <code class="bg-muted px-1 rounded">Profit Share + Linked Royalties</code>. The profit pool is distributed
-                            by ownership % (same as Profit basis), then any royalty rules whose recipient is linked to that member are
-                            added on top. Use when partners earn both on company profitability and on product/category royalties.</p>
+                        <p><span class="font-semibold text-violet-600">Hybrid basis</span> — each member receives their ownership % of the
+                            <strong>full Net Profit</strong> (royalties are not deducted first). Each payout is shown as two components:
+                            <code class="bg-muted px-1 rounded">Royalty Share = ownership% × total royalties</code> plus
+                            <code class="bg-muted px-1 rounded">Profit Share = ownership% × (net profit − royalties)</code>.
+                            Total = <code class="bg-muted px-1 rounded">ownership% × net profit</code>.</p>
                         <p class="text-xs text-muted-foreground">When you filter Profit/Hybrid basis by a single product or category,
                             the profit component becomes that scope's gross profit (net sales − COGS), since operating expenses can't be split per product.</p>
                     </div>

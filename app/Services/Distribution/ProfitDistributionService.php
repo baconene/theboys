@@ -41,7 +41,10 @@ class ProfitDistributionService
                 $base      = $profitBase;
                 $baseLabel = $categoryId || $productId ? 'Gross Profit (scope)' : 'Net Profit';
             } elseif ($basis === 'hybrid') {
-                // Hybrid: profit share + each member's linked royalties
+                // Hybrid distributes the FULL profit base (royalties are not deducted first).
+                // Each member gets: ownership% × profitBase
+                // Shown as two components: profit_share (ownership% × distributable_profit)
+                //                       + royalty_amount (ownership% × total_royalties)
                 $base      = $profitBase;
                 $baseLabel = $categoryId || $productId ? 'Gross Profit (scope) — Hybrid' : 'Net Profit — Hybrid';
             } else {
@@ -49,27 +52,25 @@ class ProfitDistributionService
                 $baseLabel = 'Net Sales';
             }
 
-            $distributable = round(max(0, $base - $royalty['total']), 2);
+            // Hybrid uses the full profit base; others deduct royalties first.
+            $distributable = $basis === 'hybrid'
+                ? round(max(0, $base), 2)
+                : round(max(0, $base - $royalty['total']), 2);
+
             $alloc = $this->shares->allocate($distributable, $shareholderId);
 
-            // Hybrid: add each member's linked royalties on top of their profit share
+            // Hybrid: annotate each member with their royalty component and pure profit component.
             if ($basis === 'hybrid') {
-                $royaltyByHolder = collect($royalty['by_recipient'])
-                    ->filter(fn ($r) => $r['shareholder_id'] !== null)
-                    ->groupBy('shareholder_id')
-                    ->map(fn ($group) => round(collect($group)->sum('amount'), 2))
-                    ->all();
-
-                $alloc['members'] = array_map(function ($m) use ($royaltyByHolder) {
-                    $royaltyAmt = (float) ($royaltyByHolder[$m['shareholder_id']] ?? 0.0);
+                $totalRoyalties = $royalty['total'];
+                $alloc['members'] = array_map(function ($m) use ($distributable, $totalRoyalties) {
+                    $royaltyPortion = $distributable > 0
+                        ? round($m['amount'] * ($totalRoyalties / $distributable), 2)
+                        : 0.0;
                     return array_merge($m, [
-                        'profit_share'   => $m['amount'],
-                        'royalty_amount' => round($royaltyAmt, 2),
-                        'amount'         => round($m['amount'] + $royaltyAmt, 2),
+                        'profit_share'   => round($m['amount'] - $royaltyPortion, 2),
+                        'royalty_amount' => $royaltyPortion,
                     ]);
                 }, $alloc['members']);
-
-                $alloc['members_total'] = round(array_sum(array_column($alloc['members'], 'amount')), 2);
             }
 
             return [
@@ -85,7 +86,7 @@ class ProfitDistributionService
                 'members_percentage' => $alloc['members_percentage'],
                 'company_amount'     => $alloc['company_amount'],
                 'company_percentage' => $alloc['company_percentage'],
-                'chart' => $this->chartData($alloc, $royalty['total']),
+                'chart' => $this->chartData($alloc, $royalty['total'], $basis),
                 'financial_summary' => [
                     'gross_sales' => $metrics['gross_sales'],
                     'net_sales'   => $metrics['net_sales'],
@@ -111,13 +112,14 @@ class ProfitDistributionService
         return round((float) ($pl['net_profit'] ?? 0), 2);
     }
 
-    private function chartData(array $alloc, float $royaltyTotal): array
+    private function chartData(array $alloc, float $royaltyTotal, string $basis = 'sales'): array
     {
         $data = [];
         foreach ($alloc['members'] as $m) {
             $data[] = ['label' => $m['name'], 'value' => $m['amount'], 'type' => 'member'];
         }
-        if ($royaltyTotal > 0) {
+        // Hybrid already rolls royalties into member amounts — no separate slice.
+        if ($royaltyTotal > 0 && $basis !== 'hybrid') {
             $data[] = ['label' => 'Royalties', 'value' => round($royaltyTotal, 2), 'type' => 'royalty'];
         }
         $data[] = ['label' => 'Company', 'value' => $alloc['company_amount'], 'type' => 'company'];
