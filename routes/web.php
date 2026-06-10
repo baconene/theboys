@@ -80,6 +80,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->name('hris.index')
         ->middleware('role:admin');
 
+    // Profit Distribution / Shareholders (admin only)
+    Route::get('distribution', [\App\Http\Controllers\DistributionPageController::class, 'index'])
+        ->name('distribution.index')
+        ->middleware('role:admin');
+
     // Parcel Tracking
     Route::get('parcels', [ParcelPageController::class, 'index'])
         ->name('parcels.index');
