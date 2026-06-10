@@ -32,15 +32,19 @@ class ProfitDistributionService
         $key = 'dist:' . md5(implode('|', [$basis, $start, $end, $categoryId, $productId, $shareholderId]));
 
         return Cache::remember($key, 300, function () use ($basis, $start, $end, $categoryId, $productId, $shareholderId) {
-            $metrics = $this->sales->salesMetrics($start, $end, $categoryId, $productId);
-            $royalty = $this->royalty->compute($start, $end, $categoryId, $productId);
+            $metrics    = $this->sales->salesMetrics($start, $end, $categoryId, $productId);
+            $royalty    = $this->royalty->compute($start, $end, $categoryId, $productId);
+            $salesBase  = round($metrics['net_sales'] - $metrics['refunds'], 2);
+            $profitBase = $this->profitBase($start, $end, $categoryId, $productId, $metrics);
 
             if ($basis === 'profit') {
-                $base = $this->profitBase($start, $end, $categoryId, $productId, $metrics);
+                $base      = $profitBase;
                 $baseLabel = $categoryId || $productId ? 'Gross Profit (scope)' : 'Net Profit';
+            } elseif ($basis === 'hybrid') {
+                $base      = round($salesBase + $profitBase, 2);
+                $baseLabel = 'Sales + Profit (Hybrid)';
             } else {
-                // sales basis: net sales − refunds
-                $base = round($metrics['net_sales'] - $metrics['refunds'], 2);
+                $base      = $salesBase;
                 $baseLabel = 'Net Sales';
             }
 
@@ -61,6 +65,15 @@ class ProfitDistributionService
                 'company_amount'     => $alloc['company_amount'],
                 'company_percentage' => $alloc['company_percentage'],
                 'chart' => $this->chartData($alloc, $royalty['total']),
+                'financial_summary' => [
+                    'gross_sales' => $metrics['gross_sales'],
+                    'net_sales'   => $metrics['net_sales'],
+                    'refunds'     => $metrics['refunds'],
+                    'cogs'        => $metrics['cogs'],
+                    'sales_base'  => $salesBase,
+                    'net_profit'  => $profitBase,
+                    'period_end'  => $end,
+                ],
             ];
         });
     }

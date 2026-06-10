@@ -26,6 +26,8 @@ class SystemController extends Controller
         'payroll_records',
         'purchase_order_items',
         'purchase_orders',
+        'bill_installments',
+        'bills',
     ];
 
     /** Menu/setup data — only cleared by factory reset */

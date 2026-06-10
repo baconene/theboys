@@ -120,7 +120,7 @@ class DistributionController extends Controller
     private function filters(Request $request): array
     {
         $request->validate([
-            'basis'          => 'nullable|in:sales,profit',
+            'basis'          => 'nullable|in:sales,profit,hybrid',
             'start_date'     => 'nullable|date',
             'end_date'       => 'nullable|date',
             'category_id'    => 'nullable|integer',
