@@ -26,6 +26,10 @@ const subTab = ref<'distribution' | 'shareholders' | 'royalties' | 'trends' | 'h
 
 const fmt = (v: number) => '₱' + (v ?? 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
+// ── Distribution preview ────────────────────────────────────────────────────
+const result = ref<any>(null)
+const loading = ref(false)
+
 // In hybrid mode only show royalty recipients that are NOT linked to a shareholder
 // (linked ones already appear as the Royalties column inside the member table)
 const visibleRoyaltyRecipients = computed(() => {
@@ -35,10 +39,6 @@ const visibleRoyaltyRecipients = computed(() => {
     }
     return result.value.royalty.by_recipient
 })
-
-// ── Distribution preview ────────────────────────────────────────────────────
-const result = ref<any>(null)
-const loading = ref(false)
 
 const params = () => ({
     basis: basis.value, start_date: startDate.value, end_date: endDate.value,
