@@ -246,7 +246,7 @@ const tabs = [
 
             <template v-if="result">
                 <!-- Financial Summary as-of card -->
-                <div class="rounded-xl border bg-card shadow-sm p-4">
+                <div v-if="result.financial_summary" class="rounded-xl border bg-card shadow-sm p-4">
                     <div class="flex items-center justify-between mb-3">
                         <p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Financial Summary — as of {{ result.financial_summary.period_end }}</p>
                         <span v-if="result.basis === 'hybrid'" class="rounded-full bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-400 px-2.5 py-0.5 text-xs font-semibold">Hybrid: Sales + Profit</span>
