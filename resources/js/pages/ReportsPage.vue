@@ -1697,6 +1697,9 @@ onMounted(async () => {
                                     {{ fmt(plReport.net_profit) }}
                                 </p>
                             </div>
+                            <p class="text-[11px] text-muted-foreground mt-2">
+                                Cash basis — only <strong>paid</strong> bills and expenses are deducted. Upcoming or unpaid bills are not reflected here until they're paid.
+                            </p>
                         </div>
                     </div>
                 </div>

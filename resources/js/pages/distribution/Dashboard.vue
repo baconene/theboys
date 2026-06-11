@@ -279,8 +279,8 @@ const tabs = [
                             <p class="text-base font-bold text-orange-500">−{{ fmt(result.financial_summary.cogs) }}</p>
                         </div>
                         <div class="space-y-0.5">
-                            <p class="text-[10px] uppercase tracking-wide text-muted-foreground" title="Always net of COGS. Matches the P&L report only when its 'Include COGS' option is on.">
-                                Net Profit <span class="normal-case text-muted-foreground/70">(incl. COGS)</span>
+                            <p class="text-[10px] uppercase tracking-wide text-muted-foreground" title="Always net of COGS. Cash basis: only paid bills and expenses are deducted — upcoming or unpaid bills are not reflected until paid. Matches the P&L report only when its 'Include COGS' option is on.">
+                                Net Profit <span class="normal-case text-muted-foreground/70">(incl. COGS · paid only)</span>
                             </p>
                             <p class="text-base font-bold" :class="result.financial_summary.net_profit >= 0 ? 'text-emerald-600' : 'text-red-500'">{{ fmt(result.financial_summary.net_profit) }}</p>
                         </div>
