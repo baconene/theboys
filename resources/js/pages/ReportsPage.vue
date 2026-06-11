@@ -127,6 +127,7 @@ interface PL {
     payroll: { total: number; count: number; breakdown: PLBreakdownItem[] }
     net_profit: number; net_margin: number
     include_cogs?: boolean
+    unpaid_completed?: { total: number; count: number }
 }
 interface BillInstallment {
     id: number; installment_number: number; amount: number
@@ -1701,6 +1702,20 @@ onMounted(async () => {
                                 Cash basis — only <strong>paid</strong> bills and expenses are deducted. Upcoming or unpaid bills are not reflected here until they're paid.
                             </p>
                         </div>
+                    </div>
+                </div>
+
+                <!-- ── Completed but unpaid (excluded from profit) ─────────────── -->
+                <div v-if="(plReport.unpaid_completed?.count ?? 0) > 0"
+                    class="rounded-xl border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/20 p-4 flex items-start gap-3">
+                    <TrendingDown class="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
+                    <div class="text-sm text-amber-800 dark:text-amber-300">
+                        <p class="font-semibold">
+                            {{ plReport.unpaid_completed!.count }} completed order(s) worth {{ fmt(plReport.unpaid_completed!.total) }} are not in this profit.
+                        </p>
+                        <p class="text-xs mt-0.5 text-amber-700 dark:text-amber-400">
+                            Revenue is recognised only when an order is fully paid (any tender). Record the outstanding payment to include these in profit.
+                        </p>
                     </div>
                 </div>
 

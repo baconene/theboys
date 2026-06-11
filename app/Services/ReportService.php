@@ -85,6 +85,15 @@ class ReportService
             ->where('payment_status', 'paid')
         )->sum('cost_subtotal');
 
+        // Completed orders that aren't fully paid yet — their revenue is NOT counted
+        // in profit (profit recognises paid orders only). Surfaced so this excluded
+        // revenue is visible instead of silently missing.
+        $unpaidCompleted = \App\Models\Order::whereBetween('created_at', [$start->copy()->startOfDay(), $end->copy()->endOfDay()])
+            ->where('status', 'completed')
+            ->where('payment_status', '!=', 'paid')
+            ->selectRaw('COUNT(*) as cnt, COALESCE(SUM(total_amount), 0) as total')
+            ->first();
+
         // Adjust COGS based on toggle: if includeCogs is false, don't deduct it from gross profit
         $deductedCogs = $includeCogs ? $cogs : 0;
         $grossProfit  = $netRevenue - $deductedCogs;
@@ -231,6 +240,11 @@ class ReportService
             'net_profit'   => $netProfit,
             'net_margin'   => $netMargin,
             'include_cogs' => $includeCogs,
+            // Completed-but-unpaid revenue excluded from profit (recognised on payment).
+            'unpaid_completed' => [
+                'total' => (float) ($unpaidCompleted->total ?? 0),
+                'count' => (int) ($unpaidCompleted->cnt ?? 0),
+            ],
         ];
     }
 }
