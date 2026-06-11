@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { Head } from '@inertiajs/vue3'
+import { Head, router } from '@inertiajs/vue3'
 import { toast } from 'vue-sonner'
 import api from '@/utils/api'
 import {
@@ -8,6 +8,7 @@ import {
     DollarSign, Plus, X, Search, ChevronLeft, ChevronRight, ChevronDown,
     ShoppingBag, ClipboardList, Package, Trash2, Pencil, CalendarDays,
 } from 'lucide-vue-next'
+import AnalyticsTab from '@/pages/reports/AnalyticsTab.vue'
 
 defineOptions({
     layout: {
@@ -62,12 +63,13 @@ const props = defineProps<{
 }>()
 
 // ── Active tab ─────────────────────────────────────────────────────────────────
-type Tab = 'orders' | 'inventory' | 'financial' | 'daily' | 'monthly' | 'products' | 'pl' | 'bills' | 'heatmap'
+type Tab = 'orders' | 'inventory' | 'financial' | 'daily' | 'monthly' | 'products' | 'pl' | 'bills' | 'heatmap' | 'analytics'
 const tab = ref<Tab>('orders')
 const loading = ref(false)
 
 const tabs: { key: Tab; label: string }[] = [
     { key: 'orders',    label: 'Orders' },
+    { key: 'analytics', label: 'Trend Analytics' },
     { key: 'inventory', label: 'Inventory' },
     { key: 'financial', label: 'Financial' },
     { key: 'daily',     label: 'Daily Sales' },
@@ -561,6 +563,8 @@ const loadMonthlyChartData = async () => {
 }
 
 const generateReport = async () => {
+    // The Trend Analytics tab is a self-contained component with its own loading.
+    if (tab.value === 'analytics') return
     loading.value = true
     try {
         if (tab.value === 'orders') {
@@ -864,8 +868,11 @@ onMounted(async () => {
             >{{ t.label }}</button>
         </div>
 
+        <!-- Trend Analytics (self-contained tab with its own filters) -->
+        <AnalyticsTab v-if="tab === 'analytics'" />
+
         <!-- Filters bar -->
-        <div class="rounded-xl border bg-card shadow-sm p-4">
+        <div v-if="tab !== 'analytics'" class="rounded-xl border bg-card shadow-sm p-4">
             <div class="flex flex-wrap gap-3 items-end">
 
                 <!-- Orders filters -->
@@ -1057,9 +1064,11 @@ onMounted(async () => {
                             </tr>
                         </thead>
                         <tbody class="divide-y">
-                            <tr v-for="order in ordersData" :key="order.id" class="hover:bg-muted/20">
+                            <tr v-for="order in ordersData" :key="order.id"
+                                @click="router.visit(`/orders/${order.id}`)"
+                                class="hover:bg-muted/30 cursor-pointer transition-colors">
                                 <td class="px-4 py-3">
-                                    <p class="font-bold">#{{ order.id }}</p>
+                                    <p class="font-bold text-primary">#{{ order.id }}</p>
                                     <p v-if="order.queue_number" class="text-xs text-muted-foreground">Q{{ order.queue_number }}</p>
                                 </td>
                                 <td class="px-4 py-3 whitespace-nowrap text-muted-foreground text-xs">{{ fmtDatetime(order.created_at) }}</td>

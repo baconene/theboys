@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Settings;
 
 use App\Http\Controllers\Controller;
+use App\Support\Brand;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -21,7 +22,21 @@ class LogoController extends Controller
             'currentLogoUrl' => Storage::disk('public')->exists(self::PATH)
                 ? Storage::disk('public')->url(self::PATH)
                 : null,
+            'brandName' => Brand::name(),
         ]);
+    }
+
+    public function updateName(Request $request): RedirectResponse
+    {
+        abort_unless(auth()->user()?->hasRole('admin'), 403);
+
+        $data = $request->validate([
+            'brand_name' => 'nullable|string|max:50',
+        ]);
+
+        Brand::setName($data['brand_name'] ?? null);
+
+        return back()->with('success', 'Brand name updated.');
     }
 
     public function update(Request $request): RedirectResponse

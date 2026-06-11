@@ -7,6 +7,7 @@ use App\Http\Controllers\Settings\PageContentController;
 use App\Http\Controllers\Settings\PriceManagementController;
 use App\Http\Controllers\Settings\ProfileController;
 use App\Http\Controllers\Settings\SecurityController;
+use App\Http\Controllers\Settings\PrintServiceSettingsController;
 use App\Http\Controllers\Settings\SystemController;
 use App\Http\Controllers\Settings\UserManagementController;
 use Illuminate\Support\Facades\Route;
@@ -35,6 +36,11 @@ Route::middleware(['auth'])->group(function () {
         ->name('settings.users.destroy')
         ->middleware('role:admin');
 
+    // Print Service (admin only)
+    Route::get('settings/print-service', [PrintServiceSettingsController::class, 'edit'])
+        ->name('settings.print-service')
+        ->middleware('role:admin');
+
     // Logo (admin only)
     Route::get('settings/logo', [LogoController::class, 'edit'])
         ->name('settings.logo')
@@ -52,6 +58,9 @@ Route::middleware(['auth'])->group(function () {
         ->middleware('role:admin');
     Route::post('settings/logo', [LogoController::class, 'update'])
         ->name('settings.logo.update')
+        ->middleware('role:admin');
+    Route::post('settings/logo/name', [LogoController::class, 'updateName'])
+        ->name('settings.logo.name')
         ->middleware('role:admin');
     Route::delete('settings/logo', [LogoController::class, 'destroy'])
         ->name('settings.logo.destroy')

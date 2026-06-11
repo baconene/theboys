@@ -17,6 +17,15 @@ use App\Http\Controllers\WelcomeController;
 
 Route::get('/', [WelcomeController::class, 'index'])->name('home');
 
+// Public order view — no auth required (linked from receipt QR code)
+Route::get('/public/orders/{id}', [\App\Http\Controllers\PublicOrderController::class, 'show'])
+    ->where('id', '[0-9]+')
+    ->name('public.orders.show');
+
+// Printing architecture — animated explainer of the receipt printing pipeline
+Route::inertia('/printing-architecture', 'PrintingArchitecture')
+    ->name('printing.architecture');
+
 Route::get('menu/{id}', [MenuController::class, 'show'])
     ->where('id', '[0-9]+')
     ->name('menu.show');
@@ -67,6 +76,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
     // HRIS
     Route::get('hris', [HrisPageController::class, 'index'])
         ->name('hris.index')
+        ->middleware('role:admin');
+
+    // Profit Distribution / Shareholders (admin only)
+    Route::get('distribution', [\App\Http\Controllers\DistributionPageController::class, 'index'])
+        ->name('distribution.index')
         ->middleware('role:admin');
 
     // Parcel Tracking

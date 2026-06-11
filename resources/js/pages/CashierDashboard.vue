@@ -173,6 +173,35 @@ const submitOrder = async () => {
     if (cartStore.items.length === 0) return
     submitting.value = true
     try {
+        const itemsPayload = cartStore.items.map((item) => ({
+            product_id: item.product_id,
+            quantity: item.quantity,
+            modifiers: item.modifiers ?? [],
+        }))
+
+        // ── Modify flow: update an existing pending order instead of creating a new one ──
+        if (cartStore.editingOrderId) {
+            try {
+                const res = await api.put(`/api/v1/orders/${cartStore.editingOrderId}`, {
+                    notes: '',
+                    discount_amount: cartStore.discount,
+                    items: itemsPayload,
+                })
+                const raw = res.data.data ?? res.data
+                pendingOrder.value = { ...raw, total_amount: parseFloat(raw.total_amount ?? 0) }
+            } catch (err: any) {
+                toast.error(err.response?.data?.message ?? 'Failed to update order')
+                return
+            }
+            cartOpen.value = false
+            await loadTenders()
+            selectedTenderId.value = tenders.value[0]?.id ?? null
+            amountTendered.value = (pendingOrder.value?.total_amount ?? 0).toFixed(2)
+            reference.value = ''
+            paymentOpen.value = true
+            return
+        }
+
         const payload = {
             order_type: cartStore.orderType,
             table_number: cartStore.tableNumber,
@@ -181,11 +210,7 @@ const submitOrder = async () => {
             customer_address: cartStore.customerAddress || null,
             discount_amount: cartStore.discount,
             notes: '',
-            items: cartStore.items.map((item) => ({
-                product_id: item.product_id,
-                quantity: item.quantity,
-                modifiers: item.modifiers ?? [],
-            })),
+            items: itemsPayload,
         }
 
         // If already offline before the call — skip network entirely
@@ -293,6 +318,71 @@ const skipPayment = () => {
     paymentDone.value = true
 }
 
+// Close the payment modal without finalizing — the order stays as a pending
+// payment (already saved). Cart is cleared; reopen later via Pending Payments → Modify.
+const holdOrder = () => {
+    const o = pendingOrder.value
+    const queueOrId = o?._offlineQueue ?? o?.queue_number ?? o?.id
+    toast.info(`Order #${queueOrId} held — find it under Pending Payments.`)
+    cartStore.clear()
+    paymentOpen.value = false
+    pendingOrder.value = null
+    paymentDone.value = false
+    completedOrder.value = null
+}
+
+// Load a pending order back into the cart so the cashier can add/remove items
+// before the customer pays. Submitting updates the existing order (Modify flow).
+const modifyUnpaidOrder = (order: UnpaidOrder) => {
+    cartStore.clear()
+    cartStore.editingOrderId = order.id
+    cartStore.orderType = order.order_type
+    cartStore.tableNumber = order.table_number
+    cartStore.customerName = order.customer_name ?? ''
+    cartStore.customerContact = order.customer_contact ?? ''
+    cartStore.customerAddress = order.customer_address ?? ''
+    cartStore.discount = parseFloat(order.discount_amount) || 0
+    order.items.forEach((it) => {
+        cartStore.items.push({
+            id: it.product.id,
+            product_id: it.product.id,
+            name: it.product.name,
+            unit_price: parseFloat(it.unit_price),
+            quantity: it.quantity,
+            modifiers: [],
+        })
+    })
+    unpaidOrdersOpen.value = false
+    cartOpen.value = true
+    toast.info(`Modifying order #${order.queue_number ?? order.id}`)
+}
+
+// Cancel (void) the just-placed order entirely.
+const cancellingOrder = ref(false)
+const cancelPendingOrder = async () => {
+    const o = pendingOrder.value
+    if (!o) return
+    if (!confirm('Cancel this order? This cannot be undone.')) return
+
+    cancellingOrder.value = true
+    try {
+        // Existing/online orders have a real server id — void them on the server.
+        if (!isOfflineOrder() && o.id) {
+            await api.post(`/api/v1/orders/${o.id}/cancel`, { reason: 'Cancelled at POS' })
+        }
+        toast.success(`Order #${o._offlineQueue ?? o.queue_number ?? o.id} cancelled.`)
+        if (!(o._isExistingOrder ?? false)) cartStore.clear()
+        paymentOpen.value = false
+        pendingOrder.value = null
+        paymentDone.value = false
+        completedOrder.value = null
+    } catch (err: any) {
+        toast.error(err.response?.data?.message ?? 'Failed to cancel order')
+    } finally {
+        cancellingOrder.value = false
+    }
+}
+
 const closeAndClear = () => {
     const o = completedOrder.value
     const isExisting = pendingOrder.value?._isExistingOrder ?? false
@@ -308,6 +398,15 @@ const closeAndClear = () => {
 
 const printReceipt = async () => {
     if (!completedOrder.value) return
+    // Primary: send to Android printing service via Pusher Channels
+    try {
+        await api.post('/api/v1/print-jobs', { order_id: completedOrder.value.orderId })
+        toast.success('Receipt sent to printer')
+        return
+    } catch {
+        // Fall through to browser print if Pusher service is not configured
+    }
+    // Fallback: browser print dialog
     try {
         await doPrint(completedOrder.value)
     } catch (err: any) {
@@ -576,7 +675,8 @@ onMounted(loadTenders)
                     :disabled="cartStore.items.length === 0 || submitting"
                     class="w-full rounded-lg bg-primary py-3 text-sm font-bold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                    {{ submitting ? 'Placing Order…' : `Place Order — ${formatPrice(cartStore.total)}` }}
+                    <template v-if="submitting">{{ cartStore.editingOrderId ? 'Updating Order…' : 'Placing Order…' }}</template>
+                    <template v-else>{{ cartStore.editingOrderId ? 'Update Order' : 'Place Order' }} — {{ formatPrice(cartStore.total) }}</template>
                 </button>
                 <button
                     @click="cartStore.clear"
@@ -823,10 +923,15 @@ onMounted(loadTenders)
                             <div class="flex h-9 w-9 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30">
                                 <CreditCard class="h-5 w-5 text-green-600" />
                             </div>
-                            <div>
+                            <div class="flex-1 min-w-0">
                                 <h3 class="font-bold">Collect Payment</h3>
                                 <p class="text-xs text-muted-foreground">Order #{{ pendingOrder._offlineQueue ?? pendingOrder.queue_number ?? pendingOrder.id }}</p>
                             </div>
+                            <!-- Hold: close temporarily, order stays pending so they can add more -->
+                            <button @click="holdOrder" title="Hold — close & add more later"
+                                class="rounded-full p-1.5 hover:bg-muted text-muted-foreground transition shrink-0">
+                                <X class="h-5 w-5" />
+                            </button>
                         </div>
 
                         <div class="p-5 space-y-5">
@@ -901,11 +1006,26 @@ onMounted(loadTenders)
                             >
                                 {{ paymentSubmitting ? 'Processing…' : 'Confirm Payment' }}
                             </button>
+                            <div class="grid grid-cols-2 gap-2">
+                                <button
+                                    @click="skipPayment"
+                                    class="rounded-lg border bg-background py-2 text-sm font-medium hover:bg-muted transition"
+                                >
+                                    Skip — Pay Later
+                                </button>
+                                <button
+                                    @click="holdOrder"
+                                    class="rounded-lg border bg-background py-2 text-sm font-medium hover:bg-muted transition"
+                                >
+                                    Hold — Add More
+                                </button>
+                            </div>
                             <button
-                                @click="skipPayment"
-                                class="w-full rounded-lg border bg-background py-2 text-sm font-medium hover:bg-muted transition"
+                                @click="cancelPendingOrder"
+                                :disabled="cancellingOrder"
+                                class="w-full rounded-lg border border-red-200 dark:border-red-900/50 text-red-600 py-2 text-sm font-medium hover:bg-red-50 dark:hover:bg-red-950/20 disabled:opacity-50 transition"
                             >
-                                Skip — Pay Later
+                                {{ cancellingOrder ? 'Cancelling…' : 'Cancel Order' }}
                             </button>
                         </div>
                     </template>
@@ -963,12 +1083,20 @@ onMounted(loadTenders)
                                 </div>
                                 <div class="text-right shrink-0">
                                     <p class="font-bold text-primary">{{ formatPrice(parseFloat(order.total_amount)) }}</p>
-                                    <button
-                                        @click="selectUnpaidOrder(order)"
-                                        class="mt-1.5 rounded-lg bg-green-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-green-700 transition"
-                                    >
-                                        Pay Now
-                                    </button>
+                                    <div class="mt-1.5 flex items-center gap-1.5 justify-end">
+                                        <button
+                                            @click="modifyUnpaidOrder(order)"
+                                            class="rounded-lg border px-3 py-1.5 text-xs font-bold hover:bg-muted transition"
+                                        >
+                                            Modify
+                                        </button>
+                                        <button
+                                            @click="selectUnpaidOrder(order)"
+                                            class="rounded-lg bg-green-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-green-700 transition"
+                                        >
+                                            Pay Now
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         </div>

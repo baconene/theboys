@@ -4,13 +4,18 @@ namespace App\Services;
 
 use App\Models\Order;
 use App\Models\OrderItem;
+use App\Models\PrintServiceSetting;
 use App\Models\QueueNumber;
 use App\Enums\OrderStatus;
+use App\Services\PrintReceiptService;
 use Illuminate\Support\Facades\DB;
 
 class OrderService
 {
-    public function __construct(private InventoryService $inventoryService) {}
+    public function __construct(
+        private InventoryService $inventoryService,
+        private PrintReceiptService $printReceiptService,
+    ) {}
 
     public function createOrder(array $data): Order
     {
@@ -62,7 +67,6 @@ class OrderService
             $product = \App\Models\Product::findOrFail($itemData['product_id']);
             $quantity = $itemData['quantity'] ?? 1;
 
-            // Check inventory availability
             $orderItem = new OrderItem([
                 'product_id' => $product->id,
                 'quantity'   => $quantity,
@@ -79,7 +83,6 @@ class OrderService
             $orderItem->calculateSubtotal();
             $orderItem->save();
 
-            // Add modifiers if any
             if (isset($itemData['modifiers']) && is_array($itemData['modifiers'])) {
                 foreach ($itemData['modifiers'] as $modifierId) {
                     \App\Models\OrderItemModifier::create([
@@ -103,11 +106,16 @@ class OrderService
         if ($status === OrderStatus::COMPLETED) {
             $order->update(['completed_at' => now()]);
 
-            // Deduct inventory only once, on first completion
             if ($previousStatus !== OrderStatus::COMPLETED->value) {
                 $order->load('items');
                 foreach ($order->items as $item) {
                     $this->inventoryService->deductForOrder($item);
+                }
+
+                // Auto-print via HTTP bridge if configured
+                $printSettings = PrintServiceSetting::getSetting();
+                if ($printSettings->print_enabled && $printSettings->print_auto_print) {
+                    $this->printReceiptService->print($order);
                 }
             }
         }

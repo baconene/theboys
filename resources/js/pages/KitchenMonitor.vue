@@ -126,8 +126,17 @@ const fetchOrders = async () => {
     } catch { /* silent */ }
 }
 
-onMounted(() => { pollInterval = setInterval(fetchOrders, 5000) })
-onUnmounted(() => { if (pollInterval) clearInterval(pollInterval) })
+const onVisible = () => { if (document.visibilityState === 'visible') fetchOrders() }
+
+onMounted(() => {
+    fetchOrders()                                   // immediate first load — no 5s blank wait
+    pollInterval = setInterval(fetchOrders, 3000)   // poll every 3s
+    document.addEventListener('visibilitychange', onVisible)
+})
+onUnmounted(() => {
+    if (pollInterval) clearInterval(pollInterval)
+    document.removeEventListener('visibilitychange', onVisible)
+})
 
 const updateStatus = async (orderId: number, status: string) => {
     updatingId.value = orderId
@@ -137,6 +146,20 @@ const updateStatus = async (orderId: number, status: string) => {
         toast.success(`Order updated → ${status}`)
     } catch (err: any) {
         toast.error(err.response?.data?.message ?? 'Failed to update')
+    } finally {
+        updatingId.value = null
+    }
+}
+
+const cancelOrder = async (orderId: number) => {
+    if (!confirm(`Cancel order #${orderId}? This cannot be undone.`)) return
+    updatingId.value = orderId
+    try {
+        await api.post(`/api/v1/orders/${orderId}/cancel`, { reason: 'Cancelled from kitchen' })
+        await fetchOrders()
+        toast.success(`Order #${orderId} cancelled`)
+    } catch (err: any) {
+        toast.error(err.response?.data?.message ?? 'Failed to cancel')
     } finally {
         updatingId.value = null
     }
@@ -230,6 +253,7 @@ const saveEdit = async () => {
                                 <div class="flex items-center gap-1.5">
                                     <span :class="['text-xs rounded-full px-2 py-0.5 font-medium', ageClass(order.created_at)]">{{ ageMinutes(order.created_at) }}m</span>
                                     <button @click="openEdit(order)" class="rounded-full p-1 hover:bg-muted text-muted-foreground" title="Edit"><Pencil class="h-3.5 w-3.5" /></button>
+                                    <button @click="cancelOrder(order.id)" :disabled="updatingId === order.id" class="rounded-full p-1 hover:bg-red-50 dark:hover:bg-red-950/30 text-muted-foreground hover:text-red-600 disabled:opacity-40" title="Cancel order"><X class="h-3.5 w-3.5" /></button>
                                 </div>
                             </div>
                             <div class="flex flex-wrap items-center gap-1.5 mb-2">
@@ -274,6 +298,7 @@ const saveEdit = async () => {
                                 <div class="flex items-center gap-1.5">
                                     <span :class="['text-xs rounded-full px-2 py-0.5 font-medium', ageClass(order.created_at)]">{{ ageMinutes(order.created_at) }}m</span>
                                     <button @click="openEdit(order)" class="rounded-full p-1 hover:bg-muted text-muted-foreground" title="Edit"><Pencil class="h-3.5 w-3.5" /></button>
+                                    <button @click="cancelOrder(order.id)" :disabled="updatingId === order.id" class="rounded-full p-1 hover:bg-red-50 dark:hover:bg-red-950/30 text-muted-foreground hover:text-red-600 disabled:opacity-40" title="Cancel order"><X class="h-3.5 w-3.5" /></button>
                                 </div>
                             </div>
                             <div class="flex flex-wrap items-center gap-1.5 mb-2">
@@ -318,6 +343,7 @@ const saveEdit = async () => {
                                 <div class="flex items-center gap-1.5">
                                     <span :class="['text-xs rounded-full px-2 py-0.5 font-medium', ageClass(order.created_at)]">{{ ageMinutes(order.created_at) }}m</span>
                                     <button @click="openEdit(order)" class="rounded-full p-1 hover:bg-muted text-muted-foreground" title="Edit"><Pencil class="h-3.5 w-3.5" /></button>
+                                    <button @click="cancelOrder(order.id)" :disabled="updatingId === order.id" class="rounded-full p-1 hover:bg-red-50 dark:hover:bg-red-950/30 text-muted-foreground hover:text-red-600 disabled:opacity-40" title="Cancel order"><X class="h-3.5 w-3.5" /></button>
                                 </div>
                             </div>
                             <div class="flex flex-wrap items-center gap-1.5 mb-2">

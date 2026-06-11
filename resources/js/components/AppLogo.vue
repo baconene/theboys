@@ -4,6 +4,7 @@ import AppLogoIcon from '@/components/AppLogoIcon.vue';
 
 const page = usePage();
 const logoUrl = (page.props as any).logoUrl as string | null;
+const brandName = ((page.props as any).brandName as string | null) ?? 'The Boys';
 </script>
 
 <template>
@@ -14,6 +15,6 @@ const logoUrl = (page.props as any).logoUrl as string | null;
         <AppLogoIcon v-else class="size-5 fill-current text-white dark:text-black" />
     </div>
     <div class="ml-1 grid flex-1 text-left text-sm">
-        <span class="mb-0.5 truncate leading-tight font-semibold">The Boys</span>
+        <span class="mb-0.5 truncate leading-tight font-semibold">{{ brandName }}</span>
     </div>
 </template>

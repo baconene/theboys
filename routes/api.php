@@ -74,6 +74,7 @@ Route::prefix('v1')->group(function () {
         Route::get('/reports/daily-chart', [ReportController::class, 'dailyChart']);
         Route::get('/reports/monthly-chart', [ReportController::class, 'monthlyChart']);
         Route::get('/reports/heatmap', [ReportController::class, 'heatmap']);
+        Route::get('/reports/analytics', [ReportController::class, 'analytics']);
 
         // Payment Tenders (authenticated write + all-list)
         Route::get('/payment-tenders/all', [\App\Http\Controllers\Api\V1\PaymentTenderController::class, 'all']);
@@ -109,6 +110,17 @@ Route::prefix('v1')->group(function () {
         Route::delete('/parcels/{parcel}/items/{item}', [\App\Http\Controllers\Api\V1\ParcelController::class, 'destroyItem']);
         Route::patch('/parcels/{parcel}/items/{item}/toggle', [\App\Http\Controllers\Api\V1\ParcelController::class, 'toggleItem']);
 
+        // Print Service settings
+        Route::get('/print-service/settings', [\App\Http\Controllers\Api\V1\PrintServiceController::class, 'getSettings']);
+        Route::post('/print-service/settings', [\App\Http\Controllers\Api\V1\PrintServiceController::class, 'saveSettings']);
+        Route::post('/print-service/test', [\App\Http\Controllers\Api\V1\PrintServiceController::class, 'testConnection']);
+        Route::post('/print-service/clear-config-cache', function () {
+            abort_unless(auth()->user()?->hasRole('admin'), 403);
+            \Illuminate\Support\Facades\Artisan::call('config:clear');
+            \Illuminate\Support\Facades\Artisan::call('cache:clear');
+            return response()->json(['ok' => true, 'message' => 'Config and app cache cleared. Broadcasting driver is now: ' . config('broadcasting.default')]);
+        });
+
         // HRIS — Employees
         Route::get('/hris/employees', [HrisController::class, 'employees']);
         Route::post('/hris/employees', [HrisController::class, 'storeEmployee']);
@@ -120,5 +132,32 @@ Route::prefix('v1')->group(function () {
         Route::post('/hris/payroll', [HrisController::class, 'storePayroll']);
         Route::post('/hris/payroll/{payrollRecord}/pay', [HrisController::class, 'markPayrollPaid']);
         Route::delete('/hris/payroll/{payrollRecord}', [HrisController::class, 'destroyPayroll']);
+
+        // Print Jobs — webhook service for receipt printer
+        Route::get('/print-jobs', [\App\Http\Controllers\Api\V1\PrintJobController::class, 'index']);
+        Route::post('/print-jobs', [\App\Http\Controllers\Api\V1\PrintJobController::class, 'store']);
+        Route::post('/print-jobs/test-channels', [\App\Http\Controllers\Api\V1\PrintJobController::class, 'testChannels']);
+        Route::post('/print-jobs/test-notification', [\App\Http\Controllers\Api\V1\PrintJobController::class, 'testNotification']);
+        Route::post('/print-jobs/{printJob}/ack', [\App\Http\Controllers\Api\V1\PrintJobController::class, 'acknowledge']);
+        Route::post('/print-jobs/{printJob}/retry', [\App\Http\Controllers\Api\V1\PrintJobController::class, 'retry']);
+
+        // Profit Distribution / Shareholder module (admin only — enforced in controllers)
+        Route::get('/shareholders', [\App\Http\Controllers\Api\V1\ShareholderController::class, 'index']);
+        Route::post('/shareholders', [\App\Http\Controllers\Api\V1\ShareholderController::class, 'store']);
+        Route::put('/shareholders/{shareholder}', [\App\Http\Controllers\Api\V1\ShareholderController::class, 'update']);
+        Route::delete('/shareholders/{shareholder}', [\App\Http\Controllers\Api\V1\ShareholderController::class, 'destroy']);
+
+        Route::get('/royalty-rules', [\App\Http\Controllers\Api\V1\RoyaltyRuleController::class, 'index']);
+        Route::post('/royalty-rules', [\App\Http\Controllers\Api\V1\RoyaltyRuleController::class, 'store']);
+        Route::put('/royalty-rules/{royaltyRule}', [\App\Http\Controllers\Api\V1\RoyaltyRuleController::class, 'update']);
+        Route::delete('/royalty-rules/{royaltyRule}', [\App\Http\Controllers\Api\V1\RoyaltyRuleController::class, 'destroy']);
+
+        Route::get('/distribution/preview', [\App\Http\Controllers\Api\V1\DistributionController::class, 'preview']);
+        Route::get('/distribution/trend', [\App\Http\Controllers\Api\V1\DistributionController::class, 'trend']);
+        Route::get('/distribution/royalty-analytics', [\App\Http\Controllers\Api\V1\DistributionController::class, 'royaltyAnalytics']);
+        Route::get('/distribution/export', [\App\Http\Controllers\Api\V1\DistributionController::class, 'export']);
+        Route::get('/distribution/snapshots', [\App\Http\Controllers\Api\V1\DistributionController::class, 'snapshots']);
+        Route::get('/distribution/snapshots/{snapshot}', [\App\Http\Controllers\Api\V1\DistributionController::class, 'showSnapshot']);
+        Route::post('/distribution/snapshots', [\App\Http\Controllers\Api\V1\DistributionController::class, 'storeSnapshot']);
     });
 });

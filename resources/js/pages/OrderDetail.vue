@@ -3,7 +3,7 @@ import { ref } from 'vue'
 import { Head, router } from '@inertiajs/vue3'
 import { ArrowLeft, ShoppingBag, User, MapPin, Clock, CreditCard, Package, Receipt, Printer } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
-import { printReceipt } from '@/utils/printReceipt'
+import api from '@/utils/api'
 
 defineOptions({
     layout: {
@@ -67,33 +67,11 @@ const grossProfit = props.order.total_amount - totalCost
 const reprintReceipt = async () => {
     printing.value = true
     try {
-        const paidPayment = props.order.payments.find(p => p.status === 'paid') ?? props.order.payments[0]
-        const amountTendered = paidPayment?.amount ?? props.order.total_amount
-        await printReceipt({
-            orderId:         props.order.id,
-            queueNumber:     props.order.queue_number,
-            orderType:       props.order.order_type,
-            tableNumber:     props.order.table_number,
-            customerName:    props.order.customer_name,
-            customerContact: props.order.customer_contact,
-            customerAddress: props.order.customer_address,
-            notes:           props.order.notes,
-            items:           props.order.items.map(i => ({
-                name:       i.product_name,
-                quantity:   i.quantity,
-                unit_price: i.unit_price,
-            })),
-            subtotal:        props.order.subtotal,
-            discount:        props.order.discount_amount,
-            total:           props.order.total_amount,
-            tenderName:      paidPayment?.tender ?? 'Cash',
-            amountTendered,
-            change:          Math.max(0, amountTendered - props.order.total_amount),
-            paid:            props.order.payment_status === 'paid',
-        })
+        // Send to Android printing service via Pusher Channels
+        await api.post('/api/v1/print-jobs', { order_id: props.order.id })
         toast.success('Receipt sent to printer')
     } catch (err: any) {
-        toast.error(err?.message ?? 'Print failed')
+        toast.error(err.response?.data?.message ?? err?.message ?? 'Print failed')
     } finally {
         printing.value = false
     }
