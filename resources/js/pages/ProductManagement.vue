@@ -3,7 +3,7 @@ import { ref, computed, watch } from 'vue'
 import { Head, router } from '@inertiajs/vue3'
 import { toast } from 'vue-sonner'
 import api from '@/utils/api'
-import { Plus, Pencil, Trash2, X, PlusCircle, MinusCircle, UtensilsCrossed, FolderPlus, Check, ImageIcon, Upload, Calculator, Eye, TrendingUp } from 'lucide-vue-next'
+import { Plus, Pencil, Trash2, X, PlusCircle, MinusCircle, UtensilsCrossed, FolderPlus, Check, ImageIcon, Upload, Calculator, Eye, TrendingUp, PackagePlus } from 'lucide-vue-next'
 
 defineOptions({
     layout: {
@@ -84,6 +84,8 @@ const openAdd = () => {
     editingId.value    = null
     form.value         = blankForm()
     recipes.value      = []
+    comboItems.value   = []
+    showCombo.value    = false
     imageFile.value    = null
     imagePreview.value = null
     removeImage.value  = false
@@ -103,6 +105,8 @@ const openEdit = (p: Product) => {
         display_order: p.display_order,
     }
     recipes.value      = p.recipes.map((r) => ({ ingredient_id: r.ingredient_id, quantity: r.quantity, unit: r.unit ?? '' }))
+    comboItems.value   = []
+    showCombo.value    = false
     imageFile.value    = null
     imagePreview.value = p.image
     removeImage.value  = false
@@ -149,6 +153,73 @@ const calculateCostFromRecipes = async () => {
         form.value.cost = parseFloat(recipeCostPreview.value.toFixed(2))
         toast.success(`Cost estimated: ₱${form.value.cost.toFixed(2)}`)
     }
+}
+
+// ─── Combo meal builder ───────────────────────────────────────────────────────
+// Build a product from other products: merge their recipes (summing duplicate
+// ingredients) and total their price/cost into this one product.
+interface ComboItemRow { product_id: number; quantity: number }
+const showCombo   = ref(false)
+const comboItems  = ref<ComboItemRow[]>([])
+
+// Component options exclude the product being edited (a combo can't contain itself).
+const comboProductOptions = computed(() =>
+    props.products.filter((p) => p.id !== editingId.value)
+)
+
+const addComboItem    = () => comboItems.value.push({ product_id: 0, quantity: 1 })
+const removeComboItem = (i: number) => comboItems.value.splice(i, 1)
+
+const comboPricePreview = computed(() =>
+    comboItems.value.reduce((sum, c) => {
+        const p = props.products.find((x) => x.id === c.product_id)
+        return sum + (p ? Number(p.price) * c.quantity : 0)
+    }, 0),
+)
+const comboCostPreview = computed(() =>
+    comboItems.value.reduce((sum, c) => {
+        const p = props.products.find((x) => x.id === c.product_id)
+        return sum + (p ? Number(p.cost) * c.quantity : 0)
+    }, 0),
+)
+
+const mergeCombo = () => {
+    const valid = comboItems.value.filter((c) => c.product_id > 0 && c.quantity > 0)
+    if (valid.length === 0) {
+        toast.warning('Add at least one component product')
+        return
+    }
+
+    // Merge recipes by ingredient_id, summing quantity × component quantity.
+    const merged = new Map<number, RecipeRow>()
+    for (const c of valid) {
+        const p = props.products.find((x) => x.id === c.product_id)
+        if (!p) continue
+        for (const r of p.recipes) {
+            const addQty = Number(r.quantity) * c.quantity
+            const existing = merged.get(r.ingredient_id)
+            if (existing) {
+                existing.quantity = Number((existing.quantity + addQty).toFixed(3))
+            } else {
+                merged.set(r.ingredient_id, {
+                    ingredient_id: r.ingredient_id,
+                    quantity: Number(addQty.toFixed(3)),
+                    unit: r.unit ?? '',
+                })
+            }
+        }
+    }
+
+    recipes.value    = Array.from(merged.values())
+    form.value.price = Number(comboPricePreview.value.toFixed(2))
+    form.value.cost  = Number(comboCostPreview.value.toFixed(2))
+
+    const totalItems = valid.reduce((n, c) => n + c.quantity, 0)
+    const noRecipes  = recipes.value.length === 0
+    toast.success(
+        `Merged ${totalItems} item(s) → price ₱${form.value.price.toFixed(2)}` +
+        (noRecipes ? ' (components have no ingredients to merge)' : `, ${recipes.value.length} ingredient(s)`),
+    )
 }
 
 // ─── Margin helpers ───────────────────────────────────────────────────────────
@@ -498,6 +569,54 @@ const doDelete = async () => {
                                         <MinusCircle class="h-4 w-4" />
                                     </button>
                                 </div>
+                            </div>
+                        </div>
+
+                        <!-- Combo Meal Builder -->
+                        <div class="rounded-xl border border-dashed p-4">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <p class="text-sm font-semibold flex items-center gap-1.5">
+                                        <PackagePlus class="h-4 w-4 text-primary" /> Combo Meal
+                                    </p>
+                                    <p class="text-xs text-muted-foreground">Build from existing products — merges their ingredients and sums price &amp; cost.</p>
+                                </div>
+                                <button type="button" @click="showCombo = !showCombo"
+                                    :class="['rounded-lg border px-3 py-1.5 text-xs font-medium hover:bg-muted transition-colors', showCombo ? 'bg-primary/10 border-primary text-primary' : 'text-muted-foreground']">
+                                    {{ showCombo ? 'Hide' : 'Build Combo' }}
+                                </button>
+                            </div>
+
+                            <div v-if="showCombo" class="mt-3 space-y-2">
+                                <div v-if="comboItems.length === 0" class="rounded-lg border border-dashed p-3 text-center text-xs text-muted-foreground">
+                                    Add the products that make up this combo (add the same product twice, or set its quantity).
+                                </div>
+                                <div v-for="(c, i) in comboItems" :key="i" class="flex items-center gap-2 rounded-lg border bg-muted/20 p-2">
+                                    <select v-model="c.product_id"
+                                        class="flex-1 rounded-md border bg-background px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary">
+                                        <option :value="0" disabled>Select product…</option>
+                                        <option v-for="p in comboProductOptions" :key="p.id" :value="p.id">{{ p.name }} (₱{{ Number(p.price).toFixed(2) }})</option>
+                                    </select>
+                                    <input v-model.number="c.quantity" type="number" min="1" step="1" placeholder="Qty"
+                                        class="w-20 rounded-md border bg-background px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary" />
+                                    <button type="button" @click="removeComboItem(i)" class="text-muted-foreground hover:text-red-500">
+                                        <MinusCircle class="h-4 w-4" />
+                                    </button>
+                                </div>
+
+                                <div class="flex flex-wrap items-center justify-between gap-2 pt-1">
+                                    <button type="button" @click="addComboItem"
+                                        class="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium hover:bg-muted">
+                                        <PlusCircle class="h-3.5 w-3.5" /> Add Product
+                                    </button>
+                                    <button type="button" @click="mergeCombo" :disabled="comboItems.length === 0"
+                                        class="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed">
+                                        <Check class="h-3.5 w-3.5" /> Merge ingredients &amp; price (≈₱{{ comboPricePreview.toFixed(2) }})
+                                    </button>
+                                </div>
+                                <p class="text-xs text-muted-foreground">
+                                    Merging replaces the ingredients above with the combined recipe and fills price &amp; cost (both stay editable).
+                                </p>
                             </div>
                         </div>
                     </div>
