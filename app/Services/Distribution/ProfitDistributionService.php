@@ -40,25 +40,30 @@ class ProfitDistributionService
             $royalty   = $this->royalty->compute($start, $end, $categoryId, $productId);
             $salesBase = round($metrics['net_sales'] - $metrics['refunds'], 2);
 
+            $scoped = $categoryId || $productId;
+            $zeroDetail = ['net_profit' => 0.0, 'income_adjustments' => 0.0, 'expenses' => 0.0, 'payroll' => 0.0];
+
             if ($basis === 'profit') {
-                $profitBase = $this->profitBase($start, $end, $categoryId, $productId, $metrics);
-                $base       = $profitBase;
-                $baseLabel  = $categoryId || $productId ? 'Gross Profit (scope)' : 'Net Profit';
+                $detail    = $this->profitDetail($start, $end, $categoryId, $productId, $metrics);
+                $base      = $detail['net_profit'];
+                $baseLabel = $scoped ? 'Gross Profit (scope)' : 'Net Profit';
             } elseif ($basis === 'hybrid') {
-                $profitBase = $this->profitBase($start, $end, $categoryId, $productId, $metrics);
-                $base       = $profitBase;
-                $baseLabel  = $categoryId || $productId ? 'Gross Profit (scope) — Hybrid' : 'Net Profit — Hybrid';
+                $detail    = $this->profitDetail($start, $end, $categoryId, $productId, $metrics);
+                $base      = $detail['net_profit'];
+                $baseLabel = $scoped ? 'Gross Profit (scope) — Hybrid' : 'Net Profit — Hybrid';
             } else {
-                // Sales basis: only compute profitBase for the financial summary card;
+                // Sales basis: only compute the profit detail for the financial summary card;
                 // wrap in try-catch so a P&L failure never breaks the sales calculation.
                 try {
-                    $profitBase = $this->profitBase($start, $end, $categoryId, $productId, $metrics);
+                    $detail = $this->profitDetail($start, $end, $categoryId, $productId, $metrics);
                 } catch (\Throwable) {
-                    $profitBase = 0.0;
+                    $detail = $zeroDetail;
                 }
                 $base      = $salesBase;
                 $baseLabel = 'Net Sales';
             }
+
+            $profitBase = $detail['net_profit'];
 
             $distributable = round(max(0, $base - $royalty['total']), 2);
             $alloc         = $this->shares->allocate($distributable, $shareholderId);
@@ -106,13 +111,16 @@ class ProfitDistributionService
                 'company_percentage' => $alloc['company_percentage'],
                 'chart' => $this->chartData($alloc, $chartRoyalties),
                 'financial_summary' => [
-                    'gross_sales' => $metrics['gross_sales'],
-                    'net_sales'   => $metrics['net_sales'],
-                    'refunds'     => $metrics['refunds'],
-                    'cogs'        => $metrics['cogs'],
-                    'sales_base'  => $salesBase,
-                    'net_profit'  => $profitBase,
-                    'period_end'  => $end,
+                    'gross_sales'        => $metrics['gross_sales'],
+                    'net_sales'          => $metrics['net_sales'],
+                    'refunds'            => $metrics['refunds'],
+                    'cogs'               => $metrics['cogs'],
+                    'income_adjustments' => $detail['income_adjustments'],
+                    'expenses'           => $detail['expenses'],
+                    'payroll'            => $detail['payroll'],
+                    'sales_base'         => $salesBase,
+                    'net_profit'         => $profitBase,
+                    'period_end'         => $end,
                 ],
             ];
         });
@@ -129,16 +137,33 @@ class ProfitDistributionService
         Cache::increment(self::VERSION_KEY);
     }
 
-    private function profitBase(string $start, string $end, ?int $categoryId, ?int $productId, array $metrics): float
+    /**
+     * Net profit plus the lines that bridge gross profit → net profit
+     * (manual income adjustments, operating expenses, payroll).
+     *
+     * @return array{net_profit:float, income_adjustments:float, expenses:float, payroll:float}
+     */
+    private function profitDetail(string $start, string $end, ?int $categoryId, ?int $productId, array $metrics): array
     {
         if ($categoryId || $productId) {
-            // Scoped profit = scope net sales − scope COGS (operating expenses
-            // can't be meaningfully attributed to a single product/category).
-            return round($metrics['net_sales'] - $metrics['cogs'], 2);
+            // Scoped profit = scope net sales − scope COGS (operating expenses,
+            // adjustments and payroll can't be attributed to a single product/category).
+            return [
+                'net_profit'         => round($metrics['net_sales'] - $metrics['cogs'], 2),
+                'income_adjustments' => 0.0,
+                'expenses'           => 0.0,
+                'payroll'            => 0.0,
+            ];
         }
 
         $pl = $this->reports->getProfitLossReport(Carbon::parse($start), Carbon::parse($end), true);
-        return round((float) ($pl['net_profit'] ?? 0), 2);
+
+        return [
+            'net_profit'         => round((float) ($pl['net_profit'] ?? 0), 2),
+            'income_adjustments' => round((float) ($pl['income_adjustments']['total'] ?? 0), 2),
+            'expenses'           => round((float) ($pl['expenses']['total'] ?? 0), 2),
+            'payroll'            => round((float) ($pl['payroll']['total'] ?? 0), 2),
+        ];
     }
 
     private function chartData(array $alloc, float $royaltyTotal): array

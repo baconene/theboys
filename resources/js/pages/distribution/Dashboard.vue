@@ -278,8 +278,20 @@ const tabs = [
                             <p class="text-[10px] uppercase tracking-wide text-muted-foreground">COGS</p>
                             <p class="text-base font-bold text-orange-500">−{{ fmt(result.financial_summary.cogs) }}</p>
                         </div>
+                        <div v-if="(result.financial_summary.income_adjustments ?? 0) !== 0" class="space-y-0.5" title="Manual 'Other Income' entries from the Financial module — added to net profit.">
+                            <p class="text-[10px] uppercase tracking-wide text-muted-foreground">Other Income</p>
+                            <p class="text-base font-bold text-teal-600">+{{ fmt(result.financial_summary.income_adjustments) }}</p>
+                        </div>
+                        <div v-if="(result.financial_summary.expenses ?? 0) !== 0" class="space-y-0.5" title="Operating expenses (incl. paid bills) from the Financial module — deducted from net profit.">
+                            <p class="text-[10px] uppercase tracking-wide text-muted-foreground">Expenses</p>
+                            <p class="text-base font-bold text-red-500">−{{ fmt(result.financial_summary.expenses) }}</p>
+                        </div>
+                        <div v-if="(result.financial_summary.payroll ?? 0) !== 0" class="space-y-0.5" title="Payroll disbursements — deducted from net profit.">
+                            <p class="text-[10px] uppercase tracking-wide text-muted-foreground">Payroll</p>
+                            <p class="text-base font-bold text-purple-600">−{{ fmt(result.financial_summary.payroll) }}</p>
+                        </div>
                         <div class="space-y-0.5">
-                            <p class="text-[10px] uppercase tracking-wide text-muted-foreground" title="Always net of COGS. Cash basis: only paid bills and expenses are deducted — upcoming or unpaid bills are not reflected until paid. Matches the P&L report only when its 'Include COGS' option is on.">
+                            <p class="text-[10px] uppercase tracking-wide text-muted-foreground" title="Always net of COGS. Cash basis: only paid bills and expenses are deducted — upcoming or unpaid bills are not reflected until paid. Includes manual Other Income / Expenses / Payroll. Matches the P&L report only when its 'Include COGS' option is on.">
                                 Net Profit <span class="normal-case text-muted-foreground/70">(incl. COGS · paid only)</span>
                             </p>
                             <p class="text-base font-bold" :class="result.financial_summary.net_profit >= 0 ? 'text-emerald-600' : 'text-red-500'">{{ fmt(result.financial_summary.net_profit) }}</p>
