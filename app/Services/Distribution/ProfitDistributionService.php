@@ -15,6 +15,9 @@ use Illuminate\Support\Facades\DB;
  */
 class ProfitDistributionService
 {
+    /** Cache-version stamp — bumped whenever underlying financial data changes. */
+    private const VERSION_KEY = 'dist:cache_version';
+
     public function __construct(
         private SalesAggregateService $sales,
         private RoyaltyEngine $royalty,
@@ -29,7 +32,8 @@ class ProfitDistributionService
      */
     public function compute(string $basis, string $start, string $end, ?int $categoryId = null, ?int $productId = null, ?int $shareholderId = null): array
     {
-        $key = 'dist:' . md5(implode('|', [$basis, $start, $end, $categoryId, $productId, $shareholderId]));
+        $ver = Cache::get(self::VERSION_KEY, 0);
+        $key = 'dist:v' . $ver . ':' . md5(implode('|', [$basis, $start, $end, $categoryId, $productId, $shareholderId]));
 
         return Cache::remember($key, 300, function () use ($basis, $start, $end, $categoryId, $productId, $shareholderId) {
             $metrics   = $this->sales->salesMetrics($start, $end, $categoryId, $productId);
@@ -112,6 +116,17 @@ class ProfitDistributionService
                 ],
             ];
         });
+    }
+
+    /**
+     * Invalidate every cached distribution result. Called whenever orders,
+     * order items, or financial transactions change, so the live P&L report and
+     * the profit-sharing summary never drift apart.
+     */
+    public static function bumpCacheVersion(): void
+    {
+        Cache::add(self::VERSION_KEY, 0);
+        Cache::increment(self::VERSION_KEY);
     }
 
     private function profitBase(string $start, string $end, ?int $categoryId, ?int $productId, array $metrics): float
