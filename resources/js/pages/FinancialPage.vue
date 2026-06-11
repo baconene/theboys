@@ -34,7 +34,7 @@ interface PaymentTender {
 }
 interface FtTransaction {
     id: number; type: string; amount: number; description: string; notes: string | null
-    transacted_at: string; running_balance: number; financial_balance: number | null
+    transacted_at: string; financial_balance: number | null
     payment_tender_id: number | null
     user?: { name: string }; tender?: { id: number; name: string }
 }
@@ -742,7 +742,7 @@ onMounted(async () => {
                             <td :class="['px-4 py-3 text-right font-semibold tabular-nums', isCredit(tx.type) ? 'text-green-600' : 'text-red-600']">
                                 {{ isCredit(tx.type) ? '+' : '-' }}{{ fmt(tx.amount) }}
                             </td>
-                            <td class="px-4 py-3 text-right text-sm tabular-nums">{{ fmt(tx.financial_balance ?? tx.running_balance) }}</td>
+                            <td class="px-4 py-3 text-right text-sm tabular-nums">{{ fmt(tx.financial_balance ?? 0) }}</td>
                             <td class="px-4 py-3 text-sm text-muted-foreground">{{ tx.user?.name ?? '—' }}</td>
                             <td class="px-4 py-3 text-center">
                                 <div class="flex items-center justify-center gap-1">

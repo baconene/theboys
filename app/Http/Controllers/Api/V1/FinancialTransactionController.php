@@ -165,7 +165,6 @@ class FinancialTransactionController extends Controller {
             'user_id'            => auth()->id(),
             'transacted_at'      => $data['transacted_at'] ?? now(),
             'payment_tender_id'  => $data['payment_tender_id'] ?? null,
-            // running_balance is computed automatically by FinancialTransaction::boot()
         ]);
         return response()->json($tx, 201);
     }
@@ -185,38 +184,9 @@ class FinancialTransactionController extends Controller {
             'payment_tender_id' => 'nullable|exists:payment_tenders,id',
         ]);
 
-        $oldAmount = (float) $financialTransaction->amount;
-        $oldAt     = $financialTransaction->transacted_at->copy();
+        $financialTransaction->fill($data)->save();
 
-        $financialTransaction->fill($data)->saveQuietly();
-        $financialTransaction->refresh();
-
-        $newAmount = (float) $financialTransaction->amount;
-        $newAt     = $financialTransaction->transacted_at;
-
-        if (abs($newAmount - $oldAmount) > 0.001 || ! $oldAt->eq($newAt)) {
-            // Recalculate running_balance from the earliest affected date forward
-            $recalcFrom = $oldAt->lt($newAt) ? $oldAt : $newAt;
-
-            $base = (float) (FinancialTransaction::where('transacted_at', '<', $recalcFrom)
-                ->orderByDesc('transacted_at')->orderByDesc('id')
-                ->value('running_balance') ?? 0.0);
-
-            FinancialTransaction::where('transacted_at', '>=', $recalcFrom)
-                ->orderBy('transacted_at')->orderBy('id')
-                ->each(function (FinancialTransaction $tx) use (&$base) {
-                    $base = round($base + match ($tx->type) {
-                        'payment', 'income_adjustment' => (float) $tx->amount,
-                        'expense', 'order', 'payroll'  => -(float) $tx->amount,
-                        default                        => 0.0,
-                    }, 2);
-                    if ((float) $tx->running_balance !== $base) {
-                        $tx->running_balance = $base;
-                        $tx->saveQuietly();
-                    }
-                });
-        }
-
+        // Balance is derived on read (financial_balance), so no stored recompute needed.
         return response()->json($financialTransaction->fresh()->load(['tender', 'user']));
     }
 
@@ -227,26 +197,9 @@ class FinancialTransactionController extends Controller {
             abort(422, 'Only manually created entries can be deleted.');
         }
 
-        $deletedAt  = $financialTransaction->transacted_at;
-        $deletedId  = $financialTransaction->id;
-        $signedAmt  = $financialTransaction->type === 'expense'
-            ? (float) $financialTransaction->amount
-            : -(float) $financialTransaction->amount;
-
         $financialTransaction->delete();
 
-        // Recalculate running_balance for every transaction after the deleted one
-        FinancialTransaction::where(function ($q) use ($deletedAt, $deletedId) {
-                $q->where('transacted_at', '>', $deletedAt)
-                  ->orWhere(fn ($q2) => $q2->where('transacted_at', $deletedAt)->where('id', '>', $deletedId));
-            })
-            ->orderBy('transacted_at')
-            ->orderBy('id')
-            ->each(function (FinancialTransaction $tx) use ($signedAmt) {
-                $tx->running_balance = round((float) $tx->running_balance + $signedAmt, 2);
-                $tx->saveQuietly();
-            });
-
+        // Balance is derived on read (financial_balance), so no stored recompute needed.
         return response()->json(null, 204);
     }
 
