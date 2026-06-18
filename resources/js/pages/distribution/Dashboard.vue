@@ -12,7 +12,7 @@ defineOptions({ layout: { breadcrumbs: [{ title: 'Dashboard', href: '/dashboard'
 
 const props = defineProps<{ categories: { id: number; name: string }[]; products: { id: number; name: string; category_id: number }[] }>()
 
-// ── Shared filters ──────────────────────────────────────────────────────────
+// ── Shared filters ────────────────────────────────────────────────────────
 const today = new Date().toISOString().split('T')[0]
 const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0]
 const basis = ref<'sales' | 'profit' | 'hybrid'>('sales')
@@ -26,7 +26,7 @@ const subTab = ref<'distribution' | 'shareholders' | 'royalties' | 'trends' | 'h
 
 const fmt = (v: number) => '₱' + (v ?? 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
-// ── Distribution preview ────────────────────────────────────────────────────
+// ── Distribution preview ────────────────────────────────────────────────────────
 const result = ref<any>(null)
 const loading = ref(false)
 
@@ -81,7 +81,7 @@ const saveSnapshot = async () => {
     }
 }
 
-// ── Pie chart ───────────────────────────────────────────────────────────────
+// ── Pie chart ───────────────────────────────────────────────────────────────────
 const pieSeries = computed(() => (result.value?.chart ?? []).map((c: any) => c.value))
 const pieOptions = computed(() => ({
     chart: { type: 'pie' },
@@ -92,7 +92,7 @@ const pieOptions = computed(() => ({
     tooltip: { y: { formatter: (val: number) => '₱' + val.toLocaleString('en-PH', { minimumFractionDigits: 2 }) } },
 }))
 
-// ── Shareholders CRUD ───────────────────────────────────────────────────────
+// ── Shareholders CRUD ───────────────────────────────────────────────────────────
 const shareholders = ref<any[]>([])
 const totalOwnership = ref(0)
 const companyPct = ref(100)
@@ -124,7 +124,7 @@ const deleteSh = async (s: any) => {
     await api.delete(`/api/v1/shareholders/${s.id}`); toast.success('Removed'); await loadShareholders()
 }
 
-// ── Royalty rules CRUD ──────────────────────────────────────────────────────
+// ── Royalty rules CRUD ──────────────────────────────────────────────────────────
 const rules = ref<any[]>([])
 const rForm = ref<any>({ id: null, scope: 'product', product_id: '', category_id: '', recipient_name: '', shareholder_id: '', royalty_percentage: '', effective_date: today, expiration_date: '', is_active: true })
 const rSaving = ref(false)
@@ -174,11 +174,11 @@ const trendOptions = computed(() => ({
     legend: { position: 'top' },
 }))
 
-// ── Snapshots history ───────────────────────────────────────────────────────
+// ── Snapshots history ────────────────────────────────────────────────────────
 const snapshots = ref<any[]>([])
 const loadSnapshots = async () => { snapshots.value = (await api.get('/api/v1/distribution/snapshots')).data }
 
-// ── Tab activation ──────────────────────────────────────────────────────────
+// ── Tab activation ────────────────────────────────────────────────────────────
 watch(subTab, (t) => {
     if (t === 'shareholders') loadShareholders()
     else if (t === 'royalties') { loadRules(); loadShareholders() }
@@ -222,7 +222,7 @@ const tabs = [
             </button>
         </div>
 
-        <!-- ── DISTRIBUTION ─────────────────────────────────────────────── -->
+        <!-- ── DISTRIBUTION ───────────────────────────────────────────────── -->
         <template v-if="subTab === 'distribution'">
             <!-- Filters -->
             <div class="rounded-xl border bg-card shadow-sm p-4">
@@ -261,7 +261,7 @@ const tabs = [
                         <p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Financial Summary — as of {{ result.financial_summary.period_end }}</p>
                         <span v-if="result.basis === 'hybrid'" class="rounded-full bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-400 px-2.5 py-0.5 text-xs font-semibold">Hybrid: Sales + Profit</span>
                     </div>
-                    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
                         <div class="space-y-0.5">
                             <p class="text-[10px] uppercase tracking-wide text-muted-foreground">Gross Sales</p>
                             <p class="text-base font-bold">{{ fmt(result.financial_summary.gross_sales) }}</p>
@@ -273,10 +273,6 @@ const tabs = [
                         <div class="space-y-0.5">
                             <p class="text-[10px] uppercase tracking-wide text-muted-foreground">Net Sales</p>
                             <p class="text-base font-bold text-blue-600">{{ fmt(result.financial_summary.net_sales) }}</p>
-                        </div>
-                        <div class="space-y-0.5">
-                            <p class="text-[10px] uppercase tracking-wide text-muted-foreground">COGS</p>
-                            <p class="text-base font-bold text-orange-500">−{{ fmt(result.financial_summary.cogs) }}</p>
                         </div>
                         <div v-if="(result.financial_summary.income_adjustments ?? 0) !== 0" class="space-y-0.5" title="Manual 'Other Income' entries from the Financial module — added to net profit.">
                             <p class="text-[10px] uppercase tracking-wide text-muted-foreground">Other Income</p>
@@ -291,8 +287,8 @@ const tabs = [
                             <p class="text-base font-bold text-purple-600">−{{ fmt(result.financial_summary.payroll) }}</p>
                         </div>
                         <div class="space-y-0.5">
-                            <p class="text-[10px] uppercase tracking-wide text-muted-foreground" title="Always net of COGS. Cash basis: only paid bills and expenses are deducted — upcoming or unpaid bills are not reflected until paid. Includes manual Other Income / Expenses / Payroll. Matches the P&L report only when its 'Include COGS' option is on.">
-                                Net Profit <span class="normal-case text-muted-foreground/70">(incl. COGS · paid only)</span>
+                            <p class="text-[10px] uppercase tracking-wide text-muted-foreground" title="Cash basis: only paid bills and expenses are deducted — upcoming or unpaid bills are not reflected until paid. Includes manual Other Income / Expenses / Payroll.">
+                                Net Profit
                             </p>
                             <p class="text-base font-bold" :class="result.financial_summary.net_profit >= 0 ? 'text-emerald-600' : 'text-red-500'">{{ fmt(result.financial_summary.net_profit) }}</p>
                         </div>
@@ -378,7 +374,7 @@ const tabs = [
             </template>
         </template>
 
-        <!-- ── SHAREHOLDERS ─────────────────────────────────────────────── -->
+        <!-- ── SHAREHOLDERS ───────────────────────────────────────────────── -->
         <template v-if="subTab === 'shareholders'">
             <div class="rounded-xl border bg-card shadow-sm p-4">
                 <div class="flex items-center justify-between mb-3">
@@ -452,7 +448,7 @@ const tabs = [
             </div>
         </template>
 
-        <!-- ── TRENDS ───────────────────────────────────────────────────── -->
+        <!-- ── TRENDS ───────────────────────────────────────────────────────── -->
         <template v-if="subTab === 'trends'">
             <div class="rounded-xl border bg-card shadow-sm p-4">
                 <h3 class="font-bold text-sm mb-2 flex items-center gap-2"><TrendingUp class="h-4 w-4 text-primary" /> Monthly Distribution Trend (this year, {{ basis === 'hybrid' ? 'hybrid (sales + profit)' : basis }} basis)</h3>
@@ -471,7 +467,7 @@ const tabs = [
             </div>
         </template>
 
-        <!-- ── HISTORY ──────────────────────────────────────────────────── -->
+        <!-- ── HISTORY ──────────────────────────────────────────────────────── -->
         <template v-if="subTab === 'history'">
             <div class="rounded-xl border bg-card shadow-sm overflow-hidden">
                 <div class="p-4 border-b"><h3 class="font-bold text-sm">Distribution Snapshots</h3></div>
@@ -492,7 +488,7 @@ const tabs = [
             </div>
         </template>
 
-        <!-- ── HELP ─────────────────────────────────────────────────────── -->
+        <!-- ── HELP ───────────────────────────────────────────────────────────── -->
         <template v-if="subTab === 'help'">
             <div class="grid lg:grid-cols-2 gap-4">
                 <!-- Overview -->
@@ -520,7 +516,7 @@ const tabs = [
                             as Profit basis (ownership % × distributable). Royalties are added on top only for members who have royalty
                             rules directly linked to their shareholder account. Members with no linked rules receive only their profit share.</p>
                         <p class="text-xs text-muted-foreground">When you filter Profit/Hybrid basis by a single product or category,
-                            the profit component becomes that scope's gross profit (net sales − COGS), since operating expenses can't be split per product.</p>
+                            the profit component becomes that scope's net sales, since operating expenses can't be split per product.</p>
                     </div>
                 </div>
 
