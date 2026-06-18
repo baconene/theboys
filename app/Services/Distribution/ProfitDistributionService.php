@@ -9,13 +9,8 @@ use Carbon\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
-/**
- * Orchestrates the full profit / sales distribution. Treats existing sales and
- * financial tables as the single source of truth — never duplicates them.
- */
 class ProfitDistributionService
 {
-    /** Cache-version stamp — bumped whenever underlying financial data changes. */
     private const VERSION_KEY = 'dist:cache_version';
 
     public function __construct(
@@ -25,11 +20,6 @@ class ProfitDistributionService
         private ReportService $reports,
     ) {}
 
-    /**
-     * Compute a live distribution preview.
-     *
-     * @param string $basis 'sales' | 'profit'
-     */
     public function compute(string $basis, string $start, string $end, ?int $categoryId = null, ?int $productId = null, ?int $shareholderId = null): array
     {
         $ver = Cache::get(self::VERSION_KEY, 0);
@@ -52,8 +42,6 @@ class ProfitDistributionService
                 $base      = $detail['net_profit'];
                 $baseLabel = $scoped ? 'Gross Profit (scope) — Hybrid' : 'Net Profit — Hybrid';
             } else {
-                // Sales basis: only compute the profit detail for the financial summary card;
-                // wrap in try-catch so a P&L failure never breaks the sales calculation.
                 try {
                     $detail = $this->profitDetail($start, $end, $categoryId, $productId, $metrics);
                 } catch (\Throwable) {
@@ -70,8 +58,6 @@ class ProfitDistributionService
             $chartRoyalties = $royalty['total'];
 
             if ($basis === 'hybrid') {
-                // Build royalty-by-holder map using plain PHP so integer shareholder IDs
-                // match without Collection::groupBy converting keys to strings.
                 $royaltyByHolder = [];
                 foreach ($royalty['by_recipient'] as $r) {
                     if ($r['shareholder_id'] !== null) {
@@ -92,7 +78,6 @@ class ProfitDistributionService
                 }, $alloc['members']);
 
                 $alloc['members_total'] = round(array_sum(array_column($alloc['members'], 'amount')), 2);
-                // Pie chart: linked royalties are already inside member slices; only show the remainder
                 $chartRoyalties = round($royalty['total'] - $linkedTotal, 2);
             }
 
@@ -126,37 +111,24 @@ class ProfitDistributionService
         });
     }
 
-    /**
-     * Invalidate every cached distribution result. Called whenever orders,
-     * order items, or financial transactions change, so the live P&L report and
-     * the profit-sharing summary never drift apart.
-     */
     public static function bumpCacheVersion(): void
     {
         Cache::add(self::VERSION_KEY, 0);
         Cache::increment(self::VERSION_KEY);
     }
 
-    /**
-     * Net profit plus the lines that bridge gross profit → net profit
-     * (manual income adjustments, operating expenses, payroll).
-     *
-     * @return array{net_profit:float, income_adjustments:float, expenses:float, payroll:float}
-     */
     private function profitDetail(string $start, string $end, ?int $categoryId, ?int $productId, array $metrics): array
     {
         if ($categoryId || $productId) {
-            // Scoped profit = scope net sales − scope COGS (operating expenses,
-            // adjustments and payroll can't be attributed to a single product/category).
             return [
-                'net_profit'         => round($metrics['net_sales'] - $metrics['cogs'], 2),
+                'net_profit'         => round($metrics['net_sales'], 2),
                 'income_adjustments' => 0.0,
                 'expenses'           => 0.0,
                 'payroll'            => 0.0,
             ];
         }
 
-        $pl = $this->reports->getProfitLossReport(Carbon::parse($start), Carbon::parse($end), true);
+        $pl = $this->reports->getProfitLossReport(Carbon::parse($start), Carbon::parse($end), false);
 
         return [
             'net_profit'         => round((float) ($pl['net_profit'] ?? 0), 2),
@@ -180,7 +152,6 @@ class ProfitDistributionService
         return $data;
     }
 
-    /** Persist a historical snapshot from a computed result. */
     public function snapshot(array $result, ?array $filters = null): DistributionSnapshot
     {
         return DB::transaction(function () use ($result, $filters) {
@@ -233,7 +204,6 @@ class ProfitDistributionService
         });
     }
 
-    /** Monthly distribution trend over a date range (members / company / royalties). */
     public function trend(string $basis, string $start, string $end): array
     {
         $cursor = Carbon::parse($start)->startOfMonth();
