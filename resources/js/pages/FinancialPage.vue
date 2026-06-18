@@ -17,7 +17,7 @@ defineOptions({
     },
 })
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+// ── Types ───────────────────────────────────────────────────────────────────────
 interface FtSummary {
     period: { start: string; end: string }
     payments: { total: number; count: number }
@@ -94,7 +94,7 @@ const typeBadgeClass = (t: string) => ({
 
 const isCredit = (t: string) => t === 'payment' || t === 'income_adjustment'
 
-// ── Computed ───────────────────────────────────────────────────────────────────
+// ── Computed ─────────────────────────────────────────────────────────────────────
 const pieData = computed(() => {
     if (!ftSummary.value) return []
     const s = ftSummary.value
@@ -187,7 +187,7 @@ const toggleSort = (key: typeof ftSortKey.value) => {
     else { ftSortKey.value = key; ftSortDir.value = 'desc' }
 }
 
-// ── Data loading ───────────────────────────────────────────────────────────────
+// ── Data loading ─────────────────────────────────────────────────────────────────
 const loadTenders = async () => {
     try {
         const res = await api.get('/api/v1/payment-tenders')
@@ -232,15 +232,17 @@ const loadFinancial = async (page = 1) => {
 const saveEntry = async () => {
     if (!entryForm.value.description.trim() || !entryForm.value.amount) return
     entrySaving.value = true
+    const payload = {
+        type: entryForm.value.type,
+        amount: parseFloat(entryForm.value.amount),
+        description: entryForm.value.description,
+        notes: entryForm.value.notes || null,
+        transacted_at: entryForm.value.transacted_at || null,
+        payment_tender_id: entryForm.value.payment_tender_id || null,
+    }
+    console.log('📤 Sending transacted_at:', entryForm.value.transacted_at)
     try {
-        await api.post('/api/v1/financial-transactions', {
-            type: entryForm.value.type,
-            amount: parseFloat(entryForm.value.amount),
-            description: entryForm.value.description,
-            notes: entryForm.value.notes || null,
-            transacted_at: entryForm.value.transacted_at || null,
-            payment_tender_id: entryForm.value.payment_tender_id || null,
-        })
+        await api.post('/api/v1/financial-transactions', payload)
         const label = entryForm.value.type === 'income_adjustment' ? 'Income adjustment' : 'Expense'
         toast.success(`${label} recorded.`)
         entryForm.value = { type: 'expense', description: '', amount: '', notes: '', transacted_at: '', payment_tender_id: null }
@@ -314,7 +316,7 @@ onMounted(async () => {
 
     <div class="space-y-5 p-4 md:p-6">
 
-        <!-- ── Collapsible Financial Overview ───────────────────────────────── -->
+        <!-- ── Collapsible Financial Overview ─────────────────────────────────── -->
         <div v-if="ftSummary" class="rounded-xl border bg-card shadow-sm overflow-hidden">
             <button @click="summaryOpen = !summaryOpen"
                 class="w-full px-4 py-3 flex items-center justify-between hover:bg-muted/30 transition-colors">
@@ -326,7 +328,7 @@ onMounted(async () => {
                     </span>
                     <span v-if="!includeCogs"
                         class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
-                        COGS excluded
+                        Asset Deductions excluded
                     </span>
                 </h2>
                 <ChevronDown class="h-4 w-4 text-muted-foreground transition-transform duration-200"
@@ -336,7 +338,7 @@ onMounted(async () => {
             <div v-show="summaryOpen" class="border-t p-4 space-y-4">
                 <div class="grid lg:grid-cols-2 gap-5">
 
-                    <!-- LEFT: Allocation donut ─────────────────────────────── -->
+                    <!-- LEFT: Allocation donut ────────────────────────── -->
                     <div class="rounded-xl border bg-background p-4">
                         <h3 class="font-bold text-sm mb-4">Financial Allocation</h3>
                         <div v-if="pieData.length > 0" class="space-y-4">
@@ -394,7 +396,7 @@ onMounted(async () => {
                         <p v-else class="text-xs text-muted-foreground py-4 text-center">No allocation data for this period.</p>
                     </div>
 
-                    <!-- RIGHT: Comparison panel ─────────────────────────────── -->
+                    <!-- RIGHT: Comparison panel ───────────────────────── -->
                     <div class="space-y-3">
 
                         <!-- Balance as of end date -->
@@ -534,7 +536,7 @@ onMounted(async () => {
             </div>
         </div>
 
-        <!-- ── Filters and actions bar ──────────────────────────────────────── -->
+        <!-- ── Filters and actions bar ────────────────────────────────────────── -->
         <div class="rounded-xl border bg-card shadow-sm p-4">
             <div class="flex flex-wrap gap-3 items-end">
                 <div>
@@ -566,9 +568,9 @@ onMounted(async () => {
                             class="pl-8 rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary w-full sm:w-52" />
                     </div>
                 </div>
-                <!-- COGS toggle -->
+                <!-- Asset Deductions toggle -->
                 <div class="flex flex-col gap-1">
-                    <label class="text-xs font-medium text-muted-foreground">Include COGS</label>
+                    <label class="text-xs font-medium text-muted-foreground">Include Asset Deductions</label>
                     <button @click="includeCogs = !includeCogs; loadFinancial()"
                         :class="['relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 self-start mt-0.5',
                             includeCogs ? 'bg-primary' : 'bg-muted-foreground/30']"
@@ -584,7 +586,7 @@ onMounted(async () => {
             </div>
         </div>
 
-        <!-- ── Entry form ────────────────────────────────────────────────────── -->
+        <!-- ── Entry form ─────────────────────────────────────────────────────────── -->
         <div v-if="showEntryForm" class="rounded-xl border bg-card shadow-sm p-4">
             <p class="text-sm font-bold mb-3">Record Expense or Income Adjustment</p>
             <div class="grid sm:grid-cols-2 gap-3">
@@ -609,6 +611,7 @@ onMounted(async () => {
                 <div>
                     <label class="text-xs font-medium text-muted-foreground block mb-1">Date/Time</label>
                     <input v-model="entryForm.transacted_at" type="datetime-local"
+                        min="2000-01-01T00:00" max="2099-12-31T23:59"
                         class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
                 </div>
                 <div>
@@ -637,7 +640,7 @@ onMounted(async () => {
             </div>
         </div>
 
-        <!-- ── Edit Entry form ──────────────────────────────────────────────────── -->
+        <!-- ── Edit Entry form ────────────────────────────────────────────────────── -->
         <div v-if="editingTx" class="rounded-xl border border-primary/30 bg-card shadow-sm p-4">
             <div class="flex items-center justify-between mb-3">
                 <p class="text-sm font-bold flex items-center gap-2">
@@ -671,6 +674,7 @@ onMounted(async () => {
                 <div>
                     <label class="text-xs font-medium text-muted-foreground block mb-1">Date/Time</label>
                     <input v-model="editForm.transacted_at" type="datetime-local"
+                        min="2000-01-01T00:00" max="2099-12-31T23:59"
                         class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
                 </div>
                 <div>
@@ -688,7 +692,7 @@ onMounted(async () => {
             </div>
         </div>
 
-        <!-- ── Transactions table ─────────────────────────────────────────────── -->
+        <!-- ── Transactions table ────────────────────────────────────────────────────── -->
         <div class="rounded-xl border bg-card shadow-sm overflow-hidden">
             <div class="p-4 border-b flex items-center justify-between">
                 <h2 class="font-bold text-sm flex items-center gap-2"><DollarSign class="h-4 w-4" /> Transactions</h2>
