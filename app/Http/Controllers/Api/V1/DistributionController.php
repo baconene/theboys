@@ -15,18 +15,15 @@ class DistributionController extends Controller
 {
     public function __construct(private ProfitDistributionService $service) {}
 
-    /** Live preview — recomputed from existing sales/financial data. */
     public function preview(Request $request): JsonResponse
     {
         $this->adminOnly();
         [$basis, $start, $end, $cat, $prod, $sh] = $this->filters($request);
-
         return response()->json(
             $this->service->compute($basis, $start, $end, $cat, $prod, $sh)
         );
     }
 
-    /** Persist a historical snapshot. */
     public function storeSnapshot(Request $request): JsonResponse
     {
         $this->adminOnly();
@@ -58,16 +55,13 @@ class DistributionController extends Controller
         return response()->json($snapshot->load(['details', 'creator:id,name']));
     }
 
-    /** Monthly distribution trend. */
     public function trend(Request $request): JsonResponse
     {
         $this->adminOnly();
         [$basis, $start, $end] = $this->filters($request);
-
         return response()->json($this->service->trend($basis, $start, $end));
     }
 
-    /** Royalty analytics: top products, totals, by category. */
     public function royaltyAnalytics(Request $request): JsonResponse
     {
         $this->adminOnly();
@@ -75,14 +69,13 @@ class DistributionController extends Controller
 
         $result = $this->service->compute($basis, $start, $end, $cat, $prod);
         return response()->json([
-            'total'       => $result['royalty']['total'],
-            'by_product'  => $result['royalty']['by_product'],
-            'by_recipient'=> $result['royalty']['by_recipient'],
-            'by_category' => $result['royalty']['by_category'],
+            'total'        => $result['royalty']['total'],
+            'by_product'   => $result['royalty']['by_product'],
+            'by_recipient' => $result['royalty']['by_recipient'],
+            'by_category'  => $result['royalty']['by_category'],
         ]);
     }
 
-    /** CSV export of the current preview (swap for Laravel Excel if .xlsx needed). */
     public function export(Request $request): StreamedResponse
     {
         $this->adminOnly();
@@ -105,6 +98,14 @@ class DistributionController extends Controller
             $rows[] = [$rr['recipient_name'], 'Royalty', '', $rr['amount']];
         }
         $rows[] = ['Company Retained Earnings', 'Company', $r['company_percentage'] . '%', $r['company_amount']];
+
+        if (!empty($r['incentive']['by_shareholder'])) {
+            $rows[] = [];
+            $rows[] = ['Incentive Pool', '', '', $r['incentive']['total']];
+            foreach ($r['incentive']['by_shareholder'] as $s) {
+                $rows[] = [$s['name'], 'Incentive', $s['sales_pct'] . '%', $s['incentive_amount']];
+            }
+        }
 
         $filename = "distribution-$start-to-$end.csv";
 

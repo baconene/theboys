@@ -54,8 +54,12 @@ class ReportController extends Controller
     {
         $this->checkPermission();
 
-        $startDate = request()->input('start_date') ? Carbon::parse(request()->input('start_date')) : null;
-        $endDate = request()->input('end_date') ? Carbon::parse(request()->input('end_date')) : null;
+        $startDate = request()->input('start_date')
+            ? Carbon::parse(request()->input('start_date'), 'Asia/Manila')->startOfDay()
+            : null;
+        $endDate = request()->input('end_date')
+            ? Carbon::parse(request()->input('end_date'), 'Asia/Manila')->endOfDay()
+            : null;
 
         $report = $this->reportService->getProductSalesReport($startDate, $endDate);
 
@@ -76,11 +80,11 @@ class ReportController extends Controller
         $this->checkPermission();
 
         $start = request()->input('start_date')
-            ? Carbon::parse(request()->input('start_date'))
-            : Carbon::now()->startOfMonth();
+            ? Carbon::parse(request()->input('start_date'), 'Asia/Manila')
+            : Carbon::now('Asia/Manila')->startOfMonth();
         $end = request()->input('end_date')
-            ? Carbon::parse(request()->input('end_date'))
-            : Carbon::now()->endOfMonth();
+            ? Carbon::parse(request()->input('end_date'), 'Asia/Manila')
+            : Carbon::now('Asia/Manila')->endOfMonth();
         $includeCogs = request()->boolean('include_cogs', true);
 
         return response()->json($this->reportService->getProfitLossReport($start, $end, $includeCogs));
@@ -106,7 +110,7 @@ class ReportController extends Controller
             $query->where('ingredient_id', request()->input('ingredient_id'));
         }
 
-        return response()->json($query->paginate(50));
+        return response()->json($query->paginate(20));
     }
 
     public function monthlyChart(): JsonResponse
@@ -115,8 +119,6 @@ class ReportController extends Controller
 
         $year = (int) request()->input('year', Carbon::now()->year);
 
-        // Exclude COGS entries (captured by order_items) and Inventory Stock In
-        // (asset purchase, not an operating expense) to prevent double-counting.
         $rows = \App\Models\FinancialTransaction::selectRaw(
             "DATE_FORMAT(transacted_at, '%Y-%m') as month,
              SUM(CASE WHEN type IN ('payment','income_adjustment') THEN amount ELSE 0 END) as income,
@@ -194,25 +196,21 @@ class ReportController extends Controller
         if ($dateFrom) $query->whereDate('created_at', '>=', $dateFrom);
         if ($dateTo)   $query->whereDate('created_at', '<=', $dateTo);
 
-        // MySQL DAYOFWEEK: 1=Sunday, 2=Monday … 7=Saturday
         $rows = $query
             ->selectRaw('DAYOFWEEK(created_at) as dow, HOUR(created_at) as hr, COUNT(*) as orders')
             ->groupByRaw('DAYOFWEEK(created_at), HOUR(created_at)')
             ->orderByRaw('DAYOFWEEK(created_at), HOUR(created_at)')
             ->get();
 
-        // Map MySQL dow → day name (dow 1 = Sunday)
         $dowMap = [1 => 'Sunday', 2 => 'Monday', 3 => 'Tuesday',
                    4 => 'Wednesday', 5 => 'Thursday', 6 => 'Friday', 7 => 'Saturday'];
 
-        // Build lookup: dayName → hour → count
         $lookup = [];
         foreach ($rows as $row) {
             $day = $dowMap[$row->dow] ?? 'Unknown';
             $lookup[$day][(int) $row->hr] = (int) $row->orders;
         }
 
-        // Always output Mon → Sun order
         $orderedDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
         $data       = [];
@@ -231,7 +229,6 @@ class ReportController extends Controller
             }
         }
 
-        // Peak slot (busiest day+hour)
         $maxOrders = 0;
         $peakSlot  = ['day' => null, 'hour' => 0, 'orders' => 0];
         foreach ($data as $slot) {

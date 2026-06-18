@@ -22,7 +22,6 @@ Route::middleware(['auth'])->group(function () {
         ->name('settings.payment-tenders')
         ->middleware('role:admin');
 
-    // User management (admin only)
     Route::get('settings/users', [UserManagementController::class, 'index'])
         ->name('settings.users')
         ->middleware('role:admin');
@@ -36,17 +35,21 @@ Route::middleware(['auth'])->group(function () {
         ->name('settings.users.destroy')
         ->middleware('role:admin');
 
-    // Print Service (admin only)
     Route::get('settings/print-service', [PrintServiceSettingsController::class, 'edit'])
         ->name('settings.print-service')
         ->middleware('role:admin');
 
-    // Logo (admin only)
     Route::get('settings/logo', [LogoController::class, 'edit'])
         ->name('settings.logo')
         ->middleware('role:admin');
 
-    // System (admin only)
+    Route::get('settings/clock', [\App\Http\Controllers\Settings\SystemClockController::class, 'edit'])
+        ->name('settings.clock')->middleware('role:admin');
+    Route::post('settings/clock', [\App\Http\Controllers\Settings\SystemClockController::class, 'update'])
+        ->name('settings.clock.update')->middleware('role:admin');
+    Route::delete('settings/clock', [\App\Http\Controllers\Settings\SystemClockController::class, 'disable'])
+        ->name('settings.clock.disable')->middleware('role:admin');
+
     Route::get('settings/system', [SystemController::class, 'index'])
         ->name('settings.system')
         ->middleware('role:admin');
@@ -66,7 +69,6 @@ Route::middleware(['auth'])->group(function () {
         ->name('settings.logo.destroy')
         ->middleware('role:admin');
 
-    // Price management (admin only)
     Route::get('settings/prices', [PriceManagementController::class, 'index'])
         ->name('settings.prices')
         ->middleware('role:admin');
@@ -74,7 +76,6 @@ Route::middleware(['auth'])->group(function () {
         ->name('settings.prices.update')
         ->middleware('role:admin');
 
-    // Advertisements (admin only)
     Route::get('settings/advertisements', [AdvertisementController::class, 'index'])
         ->name('settings.advertisements')
         ->middleware('role:admin');
@@ -91,7 +92,6 @@ Route::middleware(['auth'])->group(function () {
         ->name('settings.advertisements.toggle')
         ->middleware('role:admin');
 
-    // Page Content (admin only)
     Route::get('settings/page-content', [PageContentController::class, 'index'])
         ->name('settings.page-content')
         ->middleware('role:admin');
@@ -111,7 +111,6 @@ Route::middleware(['auth'])->group(function () {
         ->name('settings.page-content.toggle')
         ->middleware('role:admin');
 
-    // Media Library (admin only)
     Route::get('settings/media', [MediaController::class, 'index'])
         ->name('settings.media')
         ->middleware('role:admin');

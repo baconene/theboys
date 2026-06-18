@@ -29,40 +29,61 @@ class OrderController extends Controller
     {
         $this->checkPermission('view orders');
 
-        $orders = Order::with(['items.product', 'user', 'queueNumber'])
-            ->when($request->status, fn($q) => $q->where('status', $request->status))
-            ->when($request->payment_status, fn($q) => $q->where('payment_status', $request->payment_status))
-            ->when($request->exclude_cancelled, fn($q) => $q->where('status', '!=', 'cancelled'))
-            ->when($request->date_from, fn($q) => $q->where('created_at', '>=',
-                Carbon::parse($request->date_from, 'Asia/Manila')->startOfDay()->utc()))
-            ->when($request->date_to, fn($q) => $q->where('created_at', '<=',
-                Carbon::parse($request->date_to, 'Asia/Manila')->endOfDay()->utc()))
-            ->when($request->search, fn($q) => $q->where(function ($q) use ($request) {
-                $q->where('id', $request->search)
-                  ->orWhere('notes', 'like', "%{$request->search}%")
-                  ->orWhere('table_number', 'like', "%{$request->search}%");
-            }))
-            ->orderByDesc('created_at')
+        $applyFilters = function ($q) use ($request) {
+            return $q
+                ->when($request->status, fn($q) => $q->where('status', $request->status))
+                ->when($request->payment_status, fn($q) => $q->where('payment_status', $request->payment_status))
+                ->when($request->exclude_cancelled, fn($q) => $q->where('status', '!=', 'cancelled'))
+                ->when($request->date_from, fn($q) => $q->where('created_at', '>=',
+                    Carbon::parse($request->date_from, 'Asia/Manila')->startOfDay()))
+                ->when($request->date_to, fn($q) => $q->where('created_at', '<=',
+                    Carbon::parse($request->date_to, 'Asia/Manila')->endOfDay()))
+                ->when($request->search, fn($q) => $q->where(function ($q) use ($request) {
+                    $q->where('id', $request->search)
+                      ->orWhere('customer_name', 'like', "%{$request->search}%")
+                      ->orWhere('notes', 'like', "%{$request->search}%")
+                      ->orWhere('table_number', 'like', "%{$request->search}%");
+                }));
+        };
+
+        $allowed  = ['created_at', 'total_amount', 'customer_name', 'status', 'payment_status'];
+        $sortBy   = in_array($request->sort_by, $allowed) ? $request->sort_by : 'created_at';
+        $sortDir  = $request->sort_dir === 'asc' ? 'asc' : 'desc';
+
+        $orders = $applyFilters(Order::with(['items.product', 'user', 'queueNumber']))
+            ->orderBy($sortBy, $sortDir)
             ->paginate(min((int) $request->input('per_page', 20), 100));
 
-        return OrderResource::collection($orders);
+        $agg = $applyFilters(Order::query())
+            ->selectRaw("
+                COUNT(*) as total_count,
+                COALESCE(SUM(CASE WHEN payment_status = 'paid' THEN 1 ELSE 0 END), 0) as paid_count,
+                COALESCE(SUM(CASE WHEN payment_status = 'pending' THEN 1 ELSE 0 END), 0) as unpaid_count,
+                COALESCE(SUM(CASE WHEN payment_status = 'paid' THEN total_amount ELSE 0 END), 0) as paid_revenue
+            ")
+            ->first();
+
+        return OrderResource::collection($orders)->additional([
+            'summary' => [
+                'total_count'  => (int) $agg->total_count,
+                'paid_count'   => (int) $agg->paid_count,
+                'unpaid_count' => (int) $agg->unpaid_count,
+                'paid_revenue' => round((float) $agg->paid_revenue, 2),
+            ],
+        ]);
     }
 
     public function store(StoreOrderRequest $request): JsonResponse
     {
         $this->checkPermission('create orders');
-
         $order = $this->orderService->createOrder($request->validated());
-
         return response()->json(new OrderResource($order), 201);
     }
 
     public function show(Order $order): JsonResponse
     {
         $this->checkPermission('view orders');
-
         $order = $this->orderRepository->getWithItems($order->id);
-
         return response()->json(new OrderResource($order));
     }
 
@@ -109,34 +130,27 @@ class OrderController extends Controller
     public function destroy(Order $order): Response
     {
         $this->checkPermission('delete orders');
-
         return response()->noContent();
     }
 
     public function updateStatus(Order $order, UpdateOrderStatusRequest $request): JsonResponse
     {
         $this->checkPermission('update orders');
-
         $order = $this->orderService->updateOrderStatus($order, $request->enum('status', OrderStatus::class));
-
         return response()->json(new OrderResource($order));
     }
 
     public function cancel(Order $order): JsonResponse
     {
         $this->checkPermission('update orders');
-
         $order = $this->orderService->cancelOrder($order, request()->input('reason'));
-
         return response()->json(new OrderResource($order));
     }
 
     public function activeOrders(): JsonResponse
     {
         $this->checkPermission('view orders');
-
         $orders = $this->orderRepository->getActiveOrders();
-
         return response()->json(
             $orders->map(fn ($o) => \App\Http\Controllers\QueueMonitorController::formatOrder($o))->values()
         );
@@ -145,9 +159,7 @@ class OrderController extends Controller
     public function queueOrders(): JsonResponse
     {
         $this->checkPermission('view orders');
-
         $orders = $this->orderRepository->getQueueOrders();
-
         return response()->json(OrderResource::collection($orders));
     }
 
