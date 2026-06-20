@@ -457,49 +457,84 @@ onMounted(async () => {
                                 <h3 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Deposit / Account Balances</h3>
                                 <p class="text-[10px] text-muted-foreground">per tender, this period</p>
                             </div>
-                            <div v-if="ftSummary.net_by_tender?.length > 0" class="overflow-x-auto">
-                                <table class="w-full text-xs">
-                                    <thead>
-                                        <tr class="border-b text-muted-foreground bg-muted/20">
-                                            <th class="px-4 py-2 text-left font-medium">Tender / Account</th>
-                                            <th class="px-4 py-2 text-right font-medium text-green-700">Money In</th>
-                                            <th class="px-4 py-2 text-right font-medium text-red-600">Money Out</th>
-                                            <th class="px-4 py-2 text-right font-medium">Net</th>
-                                            <th class="px-4 py-2 text-right font-medium text-muted-foreground">Txns</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody class="divide-y divide-border">
-                                        <tr v-for="row in ftSummary.net_by_tender" :key="row.tender"
-                                            class="hover:bg-muted/20 transition-colors">
-                                            <td class="px-4 py-2.5 font-semibold">{{ row.tender }}</td>
-                                            <td class="px-4 py-2.5 text-right tabular-nums text-green-600 font-medium">+{{ fmt(row.total_in) }}</td>
-                                            <td class="px-4 py-2.5 text-right tabular-nums text-red-600 font-medium">-{{ fmt(row.total_out) }}</td>
-                                            <td class="px-4 py-2.5 text-right tabular-nums font-bold"
+                            <div v-if="ftSummary.net_by_tender?.length > 0">
+                                <!-- Mobile cards -->
+                                <div class="md:hidden divide-y divide-border">
+                                    <div v-for="row in ftSummary.net_by_tender" :key="row.tender"
+                                        class="px-4 py-3">
+                                        <div class="flex items-center justify-between mb-1">
+                                            <span class="font-semibold text-sm">{{ row.tender }}</span>
+                                            <span class="text-[11px] text-muted-foreground">{{ row.count }} txn{{ row.count !== 1 ? 's' : '' }}</span>
+                                        </div>
+                                        <div class="flex flex-wrap gap-x-3 gap-y-0.5 text-xs">
+                                            <span class="text-green-600 font-medium">In: +{{ fmt(row.total_in) }}</span>
+                                            <span class="text-red-600 font-medium">Out: -{{ fmt(row.total_out) }}</span>
+                                            <span class="font-bold"
                                                 :class="row.net >= 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-600'">
-                                                {{ row.net >= 0 ? '+' : '' }}{{ fmt(row.net) }}
-                                            </td>
-                                            <td class="px-4 py-2.5 text-right tabular-nums text-muted-foreground">{{ row.count }}</td>
-                                        </tr>
-                                    </tbody>
-                                    <tfoot class="border-t border-border bg-muted/30">
-                                        <tr>
-                                            <td class="px-4 py-2 font-bold text-xs">Total</td>
-                                            <td class="px-4 py-2 text-right tabular-nums font-bold text-green-700 text-xs">
-                                                +{{ fmt(ftSummary.net_by_tender.reduce((s, r) => s + r.total_in, 0)) }}
-                                            </td>
-                                            <td class="px-4 py-2 text-right tabular-nums font-bold text-red-600 text-xs">
-                                                -{{ fmt(ftSummary.net_by_tender.reduce((s, r) => s + r.total_out, 0)) }}
-                                            </td>
-                                            <td class="px-4 py-2 text-right tabular-nums font-black text-xs"
+                                                Net: {{ row.net >= 0 ? '+' : '' }}{{ fmt(row.net) }}
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <div class="px-4 py-3 bg-muted/30">
+                                        <div class="flex items-center justify-between mb-1">
+                                            <span class="font-bold text-sm">Total</span>
+                                            <span class="text-[11px] text-muted-foreground">{{ ftSummary.net_by_tender.reduce((s, r) => s + r.count, 0) }} txns</span>
+                                        </div>
+                                        <div class="flex flex-wrap gap-x-3 gap-y-0.5 text-xs">
+                                            <span class="text-green-700 font-bold">In: +{{ fmt(ftSummary.net_by_tender.reduce((s, r) => s + r.total_in, 0)) }}</span>
+                                            <span class="text-red-600 font-bold">Out: -{{ fmt(ftSummary.net_by_tender.reduce((s, r) => s + r.total_out, 0)) }}</span>
+                                            <span class="font-black"
                                                 :class="ftSummary.net >= 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-600'">
-                                                {{ fmt(ftSummary.net_by_tender.reduce((s, r) => s + r.net, 0)) }}
-                                            </td>
-                                            <td class="px-4 py-2 text-right tabular-nums text-muted-foreground text-xs">
-                                                {{ ftSummary.net_by_tender.reduce((s, r) => s + r.count, 0) }}
-                                            </td>
-                                        </tr>
-                                    </tfoot>
-                                </table>
+                                                Net: {{ fmt(ftSummary.net_by_tender.reduce((s, r) => s + r.net, 0)) }}
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <!-- Desktop table -->
+                                <div class="hidden md:block overflow-x-auto">
+                                    <table class="w-full text-xs">
+                                        <thead>
+                                            <tr class="border-b text-muted-foreground bg-muted/20">
+                                                <th class="px-4 py-2 text-left font-medium">Tender / Account</th>
+                                                <th class="px-4 py-2 text-right font-medium text-green-700">Money In</th>
+                                                <th class="px-4 py-2 text-right font-medium text-red-600">Money Out</th>
+                                                <th class="px-4 py-2 text-right font-medium">Net</th>
+                                                <th class="px-4 py-2 text-right font-medium text-muted-foreground">Txns</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody class="divide-y divide-border">
+                                            <tr v-for="row in ftSummary.net_by_tender" :key="row.tender"
+                                                class="hover:bg-muted/20 transition-colors">
+                                                <td class="px-4 py-2.5 font-semibold">{{ row.tender }}</td>
+                                                <td class="px-4 py-2.5 text-right tabular-nums text-green-600 font-medium">+{{ fmt(row.total_in) }}</td>
+                                                <td class="px-4 py-2.5 text-right tabular-nums text-red-600 font-medium">-{{ fmt(row.total_out) }}</td>
+                                                <td class="px-4 py-2.5 text-right tabular-nums font-bold"
+                                                    :class="row.net >= 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-600'">
+                                                    {{ row.net >= 0 ? '+' : '' }}{{ fmt(row.net) }}
+                                                </td>
+                                                <td class="px-4 py-2.5 text-right tabular-nums text-muted-foreground">{{ row.count }}</td>
+                                            </tr>
+                                        </tbody>
+                                        <tfoot class="border-t border-border bg-muted/30">
+                                            <tr>
+                                                <td class="px-4 py-2 font-bold text-xs">Total</td>
+                                                <td class="px-4 py-2 text-right tabular-nums font-bold text-green-700 text-xs">
+                                                    +{{ fmt(ftSummary.net_by_tender.reduce((s, r) => s + r.total_in, 0)) }}
+                                                </td>
+                                                <td class="px-4 py-2 text-right tabular-nums font-bold text-red-600 text-xs">
+                                                    -{{ fmt(ftSummary.net_by_tender.reduce((s, r) => s + r.total_out, 0)) }}
+                                                </td>
+                                                <td class="px-4 py-2 text-right tabular-nums font-black text-xs"
+                                                    :class="ftSummary.net >= 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-600'">
+                                                    {{ fmt(ftSummary.net_by_tender.reduce((s, r) => s + r.net, 0)) }}
+                                                </td>
+                                                <td class="px-4 py-2 text-right tabular-nums text-muted-foreground text-xs">
+                                                    {{ ftSummary.net_by_tender.reduce((s, r) => s + r.count, 0) }}
+                                                </td>
+                                            </tr>
+                                        </tfoot>
+                                    </table>
+                                </div>
                             </div>
                             <p v-else class="px-4 py-4 text-xs text-muted-foreground text-center">
                                 No tender-tagged transactions in this period. Tag expenses and income adjustments to a tender when recording entries.
