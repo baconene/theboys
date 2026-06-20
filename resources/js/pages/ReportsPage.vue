@@ -397,6 +397,10 @@ const topProducts = computed(() =>
     [...productSales.value].sort((a, b) => b.total_sales - a.total_sales).slice(0, 10)
 )
 
+const totalProductSales = computed(() =>
+    productSales.value.reduce((s, p) => s + Number(p.total_sales), 0)
+)
+
 const chartTotals = computed(() => {
     const income = chartData.value.reduce((s, d) => s + d.income, 0)
     const expense = chartData.value.reduce((s, d) => s + d.expense, 0)
@@ -949,10 +953,10 @@ onMounted(async () => {
 
                 <!-- Product sales date range -->
                 <template v-if="tab === 'products'">
-                    <div><label class="text-xs font-medium text-muted-foreground block mb-1">From</label>
-                        <input v-model="prodDateFrom" type="date" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
-                    <div><label class="text-xs font-medium text-muted-foreground block mb-1">To</label>
-                        <input v-model="prodDateTo" type="date" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
+                    <div class="flex-1 min-w-0 sm:flex-none"><label class="text-xs font-medium text-muted-foreground block mb-1">From</label>
+                        <input v-model="prodDateFrom" type="date" class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
+                    <div class="flex-1 min-w-0 sm:flex-none"><label class="text-xs font-medium text-muted-foreground block mb-1">To</label>
+                        <input v-model="prodDateTo" type="date" class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
                 </template>
 
                 <!-- P&L date range -->
@@ -2307,7 +2311,52 @@ onMounted(async () => {
                 <div class="p-4 border-b">
                     <h2 class="font-bold text-sm">Product Sales — {{ prodDateFrom }} to {{ prodDateTo }}</h2>
                 </div>
-                <div class="overflow-x-auto">
+
+                <!-- Mobile cards -->
+                <div class="md:hidden divide-y">
+                    <div v-for="(item, i) in topProducts" :key="item.product_id"
+                        class="px-4 py-3 hover:bg-muted/20 transition-colors">
+                        <div class="flex items-start gap-3">
+                            <!-- Rank badge -->
+                            <div :class="['shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-xs font-black',
+                                i === 0 ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' :
+                                i === 1 ? 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300' :
+                                i === 2 ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400' :
+                                'bg-muted text-muted-foreground']">
+                                {{ i + 1 }}
+                            </div>
+                            <!-- Content -->
+                            <div class="flex-1 min-w-0">
+                                <!-- Row 1: name | qty | % -->
+                                <div class="flex items-center justify-between gap-2 mb-1.5">
+                                    <p class="font-semibold text-sm truncate">{{ item.product_name }}</p>
+                                    <div class="flex items-center gap-1.5 shrink-0">
+                                        <span class="text-xs bg-muted rounded-full px-2 py-0.5 font-medium tabular-nums">
+                                            ×{{ item.total_quantity }}
+                                        </span>
+                                        <span class="text-xs bg-primary/10 text-primary rounded-full px-2 py-0.5 font-semibold tabular-nums">
+                                            {{ totalProductSales > 0 ? ((Number(item.total_sales) / totalProductSales) * 100).toFixed(1) : '0.0' }}%
+                                        </span>
+                                    </div>
+                                </div>
+                                <!-- Row 2: revenue | bar -->
+                                <div class="flex items-center gap-3">
+                                    <p class="text-sm font-bold text-green-600 tabular-nums shrink-0">{{ fmt(item.total_sales) }}</p>
+                                    <div class="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                                        <div class="h-full bg-primary rounded-full transition-all duration-500"
+                                            :style="{ width: topProducts[0]?.total_sales ? ((Number(item.total_sales) / Number(topProducts[0].total_sales)) * 100) + '%' : '0%' }" />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div v-if="topProducts.length === 0" class="px-4 py-8 text-center text-muted-foreground text-sm">
+                        No data available for this period.
+                    </div>
+                </div>
+
+                <!-- Desktop table -->
+                <div class="hidden md:block overflow-x-auto">
                     <table class="w-full text-sm">
                         <thead class="bg-muted/50 text-muted-foreground text-xs uppercase tracking-wide">
                             <tr>
@@ -2315,15 +2364,19 @@ onMounted(async () => {
                                 <th class="px-4 py-3 text-left">Product</th>
                                 <th class="px-4 py-3 text-right">Qty Sold</th>
                                 <th class="px-4 py-3 text-right">Revenue</th>
+                                <th class="px-4 py-3 text-right">% of Sales</th>
                                 <th class="px-4 py-3 text-left">Share</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y">
                             <tr v-for="(item, i) in topProducts" :key="item.product_id" class="hover:bg-muted/20">
-                                <td class="px-4 py-2 text-muted-foreground">{{ i + 1 }}</td>
+                                <td class="px-4 py-2 text-muted-foreground font-medium">{{ i + 1 }}</td>
                                 <td class="px-4 py-2 font-medium">{{ item.product_name }}</td>
-                                <td class="px-4 py-2 text-right">{{ item.total_quantity }}</td>
-                                <td class="px-4 py-2 text-right font-bold text-green-600">{{ fmt(item.total_sales) }}</td>
+                                <td class="px-4 py-2 text-right tabular-nums">{{ item.total_quantity }}</td>
+                                <td class="px-4 py-2 text-right font-bold text-green-600 tabular-nums">{{ fmt(item.total_sales) }}</td>
+                                <td class="px-4 py-2 text-right tabular-nums text-muted-foreground">
+                                    {{ totalProductSales > 0 ? ((Number(item.total_sales) / totalProductSales) * 100).toFixed(1) : '0.0' }}%
+                                </td>
                                 <td class="px-4 py-2 w-40">
                                     <div class="flex items-center gap-2">
                                         <div class="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
@@ -2334,7 +2387,7 @@ onMounted(async () => {
                                 </td>
                             </tr>
                             <tr v-if="topProducts.length === 0">
-                                <td colspan="5" class="px-4 py-8 text-center text-muted-foreground">No data available for this period.</td>
+                                <td colspan="6" class="px-4 py-8 text-center text-muted-foreground">No data available for this period.</td>
                             </tr>
                         </tbody>
                     </table>
