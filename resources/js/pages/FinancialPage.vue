@@ -542,41 +542,44 @@ onMounted(async () => {
 
         <!-- ── Filters and actions bar ────────────────────────────────────────── -->
         <div class="rounded-xl border bg-card shadow-sm p-4">
-            <div class="flex flex-wrap gap-3 items-end">
-                <div>
-                    <label class="text-xs font-medium text-muted-foreground block mb-1">From</label>
-                    <input v-model="ftStartDate" type="date" @change="loadFinancial()"
-                        class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
-                </div>
-                <div>
-                    <label class="text-xs font-medium text-muted-foreground block mb-1">To</label>
-                    <input v-model="ftEndDate" type="date" @change="loadFinancial()"
-                        class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
-                </div>
-                <div>
-                    <label class="text-xs font-medium text-muted-foreground block mb-1">Type</label>
-                    <select v-model="ftTypeFilter" @change="loadFinancial()"
-                        class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
-                        <option value="">All Types</option>
-                        <option value="payment">Payment</option>
-                        <option value="expense">Expense</option>
-                        <option value="income_adjustment">Income Adjustment</option>
-                        <option value="payroll">Payroll</option>
-                    </select>
-                </div>
-                <div>
-                    <label class="text-xs font-medium text-muted-foreground block mb-1">Search</label>
-                    <div class="relative">
-                        <Search class="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-                        <input v-model="ftSearch" type="text" placeholder="Filter transactions…"
-                            class="pl-8 rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary w-full sm:w-52" />
+            <div class="flex flex-col sm:flex-row flex-wrap gap-3 sm:items-end">
+                <div class="flex gap-3 flex-1">
+                    <div class="flex-1 min-w-0">
+                        <label class="text-xs font-medium text-muted-foreground block mb-1">From</label>
+                        <input v-model="ftStartDate" type="date" @change="loadFinancial()"
+                            class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <label class="text-xs font-medium text-muted-foreground block mb-1">To</label>
+                        <input v-model="ftEndDate" type="date" @change="loadFinancial()"
+                            class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
                     </div>
                 </div>
-                <!-- Asset Deductions toggle -->
-                <div class="flex flex-col gap-1">
+                <div class="flex gap-3 flex-1 sm:flex-none">
+                    <div class="flex-1 sm:flex-none">
+                        <label class="text-xs font-medium text-muted-foreground block mb-1">Type</label>
+                        <select v-model="ftTypeFilter" @change="loadFinancial()"
+                            class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
+                            <option value="">All Types</option>
+                            <option value="payment">Payment</option>
+                            <option value="expense">Expense</option>
+                            <option value="income_adjustment">Income Adjustment</option>
+                            <option value="payroll">Payroll</option>
+                        </select>
+                    </div>
+                    <div class="flex-1 sm:flex-none">
+                        <label class="text-xs font-medium text-muted-foreground block mb-1">Search</label>
+                        <div class="relative">
+                            <Search class="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                            <input v-model="ftSearch" type="text" placeholder="Filter…"
+                                class="w-full pl-8 rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary sm:w-52" />
+                        </div>
+                    </div>
+                </div>
+                <div class="flex items-center justify-between sm:justify-start sm:flex-col sm:items-start gap-3 sm:gap-1">
                     <label class="text-xs font-medium text-muted-foreground">Include Asset Deductions</label>
                     <button @click="includeAssetDeductions = !includeAssetDeductions; loadFinancial()"
-                        :class="['relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 self-start mt-0.5',
+                        :class="['relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200',
                             includeAssetDeductions ? 'bg-primary' : 'bg-muted-foreground/30']"
                         role="switch" :aria-checked="includeAssetDeductions">
                         <span :class="['pointer-events-none block h-5 w-5 rounded-full bg-white shadow-lg ring-0 transition-transform duration-200',
@@ -584,7 +587,7 @@ onMounted(async () => {
                     </button>
                 </div>
                 <button @click="showEntryForm = !showEntryForm"
-                    class="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 self-end">
+                    class="flex items-center justify-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 sm:self-end">
                     <Plus class="h-3.5 w-3.5" /> Record Entry
                 </button>
             </div>
@@ -699,13 +702,56 @@ onMounted(async () => {
             </div>
         </div>
 
-        <!-- ── Transactions table ────────────────────────────────────────────────────── -->
+        <!-- ── Transactions ────────────────────────────────────────────────────────── -->
         <div class="rounded-xl border bg-card shadow-sm overflow-hidden">
             <div class="p-4 border-b flex items-center justify-between">
                 <h2 class="font-bold text-sm flex items-center gap-2"><DollarSign class="h-4 w-4" /> Transactions</h2>
                 <p v-if="ftSearch" class="text-xs text-muted-foreground">{{ sortedTx.length }} result{{ sortedTx.length !== 1 ? 's' : '' }}</p>
             </div>
-            <div class="overflow-x-auto">
+
+            <!-- Mobile card list -->
+            <div class="md:hidden divide-y">
+                <div v-for="tx in sortedTx" :key="tx.id"
+                    :class="['px-4 py-3 transition-colors', editingTx?.id === tx.id ? 'bg-primary/5 dark:bg-primary/10' : 'hover:bg-muted/20']">
+                    <div class="flex items-start justify-between gap-3">
+                        <div class="min-w-0 flex-1">
+                            <div class="flex items-center gap-2 flex-wrap mb-1">
+                                <span :class="['px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap', typeBadgeClass(tx.type)]">
+                                    {{ typeLabel(tx.type) }}
+                                </span>
+                                <span class="text-xs text-muted-foreground tabular-nums">{{ fmtDatetime(tx.transacted_at) }}</span>
+                            </div>
+                            <p class="text-sm font-medium leading-snug">{{ tx.description }}</p>
+                            <div class="flex items-center gap-2 mt-1 text-xs text-muted-foreground flex-wrap">
+                                <span v-if="tx.tender?.name">{{ tx.tender.name }}</span>
+                                <span v-if="tx.user?.name" class="opacity-60">{{ tx.user.name }}</span>
+                            </div>
+                        </div>
+                        <div class="flex flex-col items-end gap-1 shrink-0">
+                            <span :class="['font-bold tabular-nums text-sm', isCredit(tx.type) ? 'text-green-600' : 'text-red-600']">
+                                {{ isCredit(tx.type) ? '+' : '-' }}{{ fmt(tx.amount) }}
+                            </span>
+                            <span class="text-xs text-muted-foreground tabular-nums">{{ fmt(tx.financial_balance ?? 0) }}</span>
+                            <div class="flex items-center gap-2 mt-1">
+                                <button v-if="tx.type !== 'order'" @click="startEdit(tx)"
+                                    :class="['hover:text-primary transition-colors', editingTx?.id === tx.id ? 'text-primary' : 'text-muted-foreground']"
+                                    title="Edit">
+                                    <Pencil class="h-4 w-4" />
+                                </button>
+                                <button v-if="isAdmin || ['expense', 'income_adjustment'].includes(tx.type)"
+                                    @click="deleteTransaction(tx)" :disabled="ftDeleting === tx.id"
+                                    class="text-red-600 hover:text-red-700 disabled:opacity-50 transition-colors"
+                                    title="Delete">
+                                    <Trash2 class="h-4 w-4" />
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Desktop table -->
+            <div class="hidden md:block overflow-x-auto">
                 <table class="w-full text-sm">
                     <thead class="bg-muted/50 text-muted-foreground text-xs uppercase tracking-wide">
                         <tr>
