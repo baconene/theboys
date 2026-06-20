@@ -83,7 +83,10 @@ const fmt = (v: number | string | null | undefined) =>
 
 const fmtDatetime = (s: string) => {
     if (!s) return '—'
-    const d = new Date(s)
+    // MySQL returns "YYYY-MM-DD HH:MM:SS" (space separator); Safari rejects that format.
+    // Replace the space with T so all browsers get a valid ISO-8601 string.
+    const d = new Date(s.replace(' ', 'T'))
+    if (isNaN(d.getTime())) return s
     return d.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: '2-digit' }) + ' ' +
         d.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit', hour12: true })
 }
@@ -240,6 +243,9 @@ const loadFinancial = async (page = 1) => {
 const saveEntry = async () => {
     if (!entryForm.value.description.trim() || !entryForm.value.amount) return
     entrySaving.value = true
+    const recordedDate = entryForm.value.transacted_at
+        ? entryForm.value.transacted_at.substring(0, 10)
+        : today
     const payload = {
         type: entryForm.value.type,
         amount: parseFloat(entryForm.value.amount),
@@ -248,13 +254,15 @@ const saveEntry = async () => {
         transacted_at: entryForm.value.transacted_at || null,
         payment_tender_id: entryForm.value.payment_tender_id || null,
     }
-    console.log('📤 Sending transacted_at:', entryForm.value.transacted_at)
     try {
         await api.post('/api/v1/financial-transactions', payload)
         const label = entryForm.value.type === 'income_adjustment' ? 'Income adjustment' : 'Expense'
         toast.success(`${label} recorded.`)
         entryForm.value = { type: 'expense', description: '', amount: '', notes: '', transacted_at: '', payment_tender_id: null }
         showEntryForm.value = false
+        // Widen the date filter to include the entry's date so it's always visible after save.
+        if (recordedDate < ftStartDate.value) ftStartDate.value = recordedDate
+        if (recordedDate > ftEndDate.value) ftEndDate.value = recordedDate
         await loadFinancial()
     } catch (err: any) {
         toast.error(err.response?.data?.message ?? 'Failed to save entry.')
