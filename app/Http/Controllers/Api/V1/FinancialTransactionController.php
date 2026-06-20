@@ -105,10 +105,11 @@ class FinancialTransactionController extends Controller {
             ])
             ->values();
 
-        $incomeAdj = (float)($rows['income_adjustment']?->total ?? 0);
-        $expenses  = (float)($rows['expense']?->total ?? 0);
-        $payments  = (float)($rows['payment']?->total ?? 0);
-        $payroll   = (float)($rows['payroll']?->total ?? 0);
+        $incomeAdj       = (float)($rows['income_adjustment']?->total ?? 0);
+        $expenses        = (float)($rows['expense']?->total ?? 0);
+        $payments        = (float)($rows['payment']?->total ?? 0);
+        $payroll         = (float)($rows['payroll']?->total ?? 0);
+        $assetDeductions = (float)($rows['asset_deduction']?->total ?? 0);
 
         $balanceAsOfEnd = (float) (FinancialTransaction::where('type', '!=', 'order')
             ->when(! $includeAssetDeductions, $noAssetDeductions)
@@ -118,11 +119,12 @@ class FinancialTransactionController extends Controller {
 
         return response()->json([
             'period'                  => ['start' => $start->toDateString(), 'end' => $end->toDateString()],
-            'payments'                => ['total' => $payments,   'count' => $rows['payment']?->count  ?? 0],
-            'expenses'                => ['total' => $expenses,   'count' => $rows['expense']?->count  ?? 0],
-            'income_adjustments'      => ['total' => $incomeAdj,  'count' => $rows['income_adjustment']?->count ?? 0],
-            'payroll'                 => ['total' => $payroll,    'count' => $rows['payroll']?->count  ?? 0],
-            'net'                     => $payments + $incomeAdj - $expenses - $payroll,
+            'payments'                => ['total' => $payments,         'count' => (int) ($rows['payment']?->count          ?? 0)],
+            'expenses'                => ['total' => $expenses,         'count' => (int) ($rows['expense']?->count          ?? 0)],
+            'income_adjustments'      => ['total' => $incomeAdj,        'count' => (int) ($rows['income_adjustment']?->count ?? 0)],
+            'payroll'                 => ['total' => $payroll,          'count' => (int) ($rows['payroll']?->count          ?? 0)],
+            'asset_deductions'        => ['total' => $assetDeductions,  'count' => (int) ($rows['asset_deduction']?->count  ?? 0)],
+            'net'                     => $payments + $incomeAdj - $expenses - $payroll - $assetDeductions,
             'balance_as_of_end'       => $balanceAsOfEnd,
             'by_tender'               => $byTender,
             'net_by_tender'           => $netByTender,

@@ -24,6 +24,7 @@ interface FtSummary {
     expenses: { total: number; count: number }
     income_adjustments: { total: number; count: number }
     payroll: { total: number; count: number }
+    asset_deductions: { total: number; count: number }
     net: number
     by_tender: { tender: string; total: number; count: number }[]
     net_by_tender: { tender: string; total_in: number; total_out: number; net: number; count: number }[]
@@ -142,7 +143,7 @@ const comparisonBars = computed(() => {
     if (!ftSummary.value) return []
     const s = ftSummary.value
     const income  = s.payments.total + (s.income_adjustments?.total ?? 0)
-    const outflow = s.expenses.total + (s.payroll?.total ?? 0)
+    const outflow = s.expenses.total + (s.payroll?.total ?? 0) + (s.asset_deductions?.total ?? 0)
     const payable = billsSummary.value?.total_due ?? 0
     const items = [
         { label: 'Total Income',  value: income,  barColor: 'bg-blue-500',    textColor: 'text-blue-600' },
