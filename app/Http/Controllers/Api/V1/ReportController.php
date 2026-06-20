@@ -32,7 +32,9 @@ class ReportController extends Controller
     {
         $this->checkPermission();
 
-        $date = request()->input('date') ? Carbon::parse(request()->input('date')) : null;
+        $date = request()->input('date')
+            ? Carbon::parse(request()->input('date'), 'Asia/Manila')
+            : null;
         $report = $this->reportService->getDailySalesReport($date);
 
         return response()->json($report);

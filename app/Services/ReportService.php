@@ -11,35 +11,41 @@ class ReportService
     {
         $date ??= Carbon::today();
 
-        $orders = Order::whereDate('created_at', $date->toDateString())
-            ->where('payment_status', 'paid')
-            ->get();
+        // Revenue from payment transactions using the same DATE(transacted_at) grouping
+        // the daily chart uses, so the two numbers always match for the same date.
+        $paymentTxs = \App\Models\FinancialTransaction::where('type', 'payment')
+            ->whereDate('transacted_at', $date->toDateString())
+            ->get(['order_id', 'amount']);
+
+        $totalRevenue = (float) $paymentTxs->sum('amount');
+        $orderIds     = $paymentTxs->whereNotNull('order_id')->pluck('order_id')->unique()->values();
+        $orders       = Order::whereIn('id', $orderIds)->get();
 
         return [
-            'date' => $date->format('Y-m-d'),
-            'total_orders' => $orders->count(),
-            'total_sales' => $orders->sum('total_amount'),
-            'total_discount' => $orders->sum('discount_amount'),
-            'total_tax' => $orders->sum('tax_amount'),
-            'orders' => $orders,
+            'date'           => $date->toDateString(),
+            'total_orders'   => $orderIds->count(),
+            'total_sales'    => $totalRevenue,
+            'total_discount' => (float) $orders->sum('discount_amount'),
+            'total_tax'      => (float) $orders->sum('tax_amount'),
+            'orders'         => $orders,
         ];
     }
 
     public function getMonthlySalesReport(int $year, int $month): array
     {
         $start = Carbon::create($year, $month, 1);
-        $end = $start->copy()->endOfMonth();
+        $end   = $start->copy()->endOfMonth();
 
         $orders = Order::whereBetween('created_at', [$start, $end])
             ->where('payment_status', 'paid')
             ->get();
 
         return [
-            'month' => $start->format('Y-m'),
-            'total_orders' => $orders->count(),
-            'total_sales' => $orders->sum('total_amount'),
+            'month'          => $start->format('Y-m'),
+            'total_orders'   => $orders->count(),
+            'total_sales'    => $orders->sum('total_amount'),
             'total_discount' => $orders->sum('discount_amount'),
-            'total_tax' => $orders->sum('tax_amount'),
+            'total_tax'      => $orders->sum('tax_amount'),
         ];
     }
 
@@ -65,25 +71,29 @@ class ReportService
 
     public function getProfitLossReport(Carbon $start, Carbon $end, bool $includeCogs = true): array
     {
-        // Revenue from paid orders
-        $revenue = \App\Models\Order::whereBetween('created_at', [$start->startOfDay(), $end->copy()->endOfDay()])
+        // Revenue: sum of payment transactions in the period.
+        // Using FinancialTransaction as the source (same as the chart) so P&L revenue
+        // always matches chart income for the same date range.
+        $paymentOrderIds = \App\Models\FinancialTransaction::where('type', 'payment')
+            ->whereBetween('transacted_at', [$start->copy()->startOfDay(), $end->copy()->endOfDay()])
+            ->whereNotNull('order_id')
+            ->pluck('order_id')
+            ->unique();
+
+        $orderStats = \App\Models\Order::whereIn('id', $paymentOrderIds)
             ->where('payment_status', 'paid')
-            ->selectRaw('
-                COUNT(*) as order_count,
-                COALESCE(SUM(total_amount), 0) as gross_sales,
-                COALESCE(SUM(discount_amount), 0) as discounts
-            ')
+            ->selectRaw('COUNT(*) as order_count, COALESCE(SUM(subtotal), 0) as gross_sales, COALESCE(SUM(discount_amount), 0) as discounts')
             ->first();
 
-        $grossSales = (float) ($revenue->gross_sales ?? 0);
-        $discounts  = (float) ($revenue->discounts ?? 0);
-        $netRevenue = $grossSales - $discounts;
+        $netRevenue     = (float) \App\Models\FinancialTransaction::where('type', 'payment')
+            ->whereBetween('transacted_at', [$start->copy()->startOfDay(), $end->copy()->endOfDay()])
+            ->sum('amount');
+        $grossSales     = (float) ($orderStats->gross_sales ?? 0); // pre-discount subtotals
+        $discounts      = (float) ($orderStats->discounts   ?? 0);
+        $paidOrderCount = (int)   ($orderStats->order_count ?? 0);
 
-        // COGS: sum of cost_subtotal on items from paid orders in period
-        $cogs = (float) \App\Models\OrderItem::whereHas('order', fn ($q) => $q
-            ->whereBetween('created_at', [$start->startOfDay(), $end->copy()->endOfDay()])
-            ->where('payment_status', 'paid')
-        )->sum('cost_subtotal');
+        // COGS: sum of cost_subtotal on items from the same paid orders
+        $cogs = (float) \App\Models\OrderItem::whereIn('order_id', $paymentOrderIds)->sum('cost_subtotal');
 
         // Completed orders that aren't fully paid yet — their revenue is NOT counted
         // in profit (profit recognises paid orders only). Surfaced so this excluded
@@ -186,8 +196,7 @@ class ReportService
         $totalRevenuePlusAdj = $netRevenue + $totalIncomeAdj;
         $netMargin           = $totalRevenuePlusAdj > 0 ? round(($netProfit / $totalRevenuePlusAdj) * 100, 2) : 0;
 
-        $hasCogs        = $cogs > 0;
-        $paidOrderCount = (int) ($revenue->order_count ?? 0);
+        $hasCogs = $cogs > 0;
 
         return [
             'period' => [
