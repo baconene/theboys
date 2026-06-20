@@ -27,7 +27,7 @@ interface FtSummary {
     net: number
     by_tender: { tender: string; total: number; count: number }[]
     net_by_tender: { tender: string; total_in: number; total_out: number; net: number; count: number }[]
-    include_cogs: boolean
+    include_asset_deductions: boolean
 }
 interface PaymentTender {
     id: number; name: string; is_active: boolean
@@ -64,7 +64,7 @@ const ftSearch = ref('')
 const ftSortKey = ref<'transacted_at' | 'type' | 'amount' | 'description'>('transacted_at')
 const ftSortDir = ref<'asc' | 'desc'>('desc')
 const tenders = ref<PaymentTender[]>([])
-const includeCogs = ref(true)
+const includeAssetDeductions = ref(true)
 const editingTx = ref<FtTransaction | null>(null)
 const editForm = ref({ description: '', amount: '', notes: '', transacted_at: '', payment_tender_id: null as number | null })
 const editSaving = ref(false)
@@ -203,7 +203,7 @@ const loadFinancial = async (page = 1) => {
                 params: {
                     start_date: ftStartDate.value || undefined,
                     end_date: ftEndDate.value || undefined,
-                    include_cogs: includeCogs.value,
+                    include_asset_deductions: includeAssetDeductions.value,
                 },
             }),
             api.get('/api/v1/financial-transactions', {
@@ -212,7 +212,7 @@ const loadFinancial = async (page = 1) => {
                     start_date: ftStartDate.value || undefined,
                     end_date: ftEndDate.value || undefined,
                     type: ftTypeFilter.value || undefined,
-                    include_cogs: includeCogs.value,
+                    include_asset_deductions: includeAssetDeductions.value,
                 },
             }),
             api.get('/api/v1/bills/summary', {
@@ -326,7 +326,7 @@ onMounted(async () => {
                     <span class="text-xs font-normal text-muted-foreground">
                         {{ ftSummary.period?.start }} – {{ ftSummary.period?.end }}
                     </span>
-                    <span v-if="!includeCogs"
+                    <span v-if="!includeAssetDeductions"
                         class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
                         Asset Deductions excluded
                     </span>
@@ -571,12 +571,12 @@ onMounted(async () => {
                 <!-- Asset Deductions toggle -->
                 <div class="flex flex-col gap-1">
                     <label class="text-xs font-medium text-muted-foreground">Include Asset Deductions</label>
-                    <button @click="includeCogs = !includeCogs; loadFinancial()"
+                    <button @click="includeAssetDeductions = !includeAssetDeductions; loadFinancial()"
                         :class="['relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 self-start mt-0.5',
-                            includeCogs ? 'bg-primary' : 'bg-muted-foreground/30']"
-                        role="switch" :aria-checked="includeCogs">
+                            includeAssetDeductions ? 'bg-primary' : 'bg-muted-foreground/30']"
+                        role="switch" :aria-checked="includeAssetDeductions">
                         <span :class="['pointer-events-none block h-5 w-5 rounded-full bg-white shadow-lg ring-0 transition-transform duration-200',
-                            includeCogs ? 'translate-x-5' : 'translate-x-0']" />
+                            includeAssetDeductions ? 'translate-x-5' : 'translate-x-0']" />
                     </button>
                 </div>
                 <button @click="showEntryForm = !showEntryForm"

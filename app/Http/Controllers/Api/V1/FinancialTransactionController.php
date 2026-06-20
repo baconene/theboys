@@ -9,21 +9,21 @@ use Illuminate\Http\Request;
 class FinancialTransactionController extends Controller {
     public function index(Request $request): JsonResponse {
         $this->checkReports();
-        $includeCogs = $request->boolean('include_cogs', true);
+        $includeAssetDeductions = $request->boolean('include_asset_deductions', true);
 
         $noAssetDeductions = fn ($q) => $q->where('type', '!=', 'asset_deduction');
 
         $openingBalance = 0.0;
         if ($request->start_date) {
             $openingBalance = (float) (FinancialTransaction::where('type', '!=', 'order')
-                ->when(! $includeCogs, $noAssetDeductions)
+                ->when(! $includeAssetDeductions, $noAssetDeductions)
                 ->whereDate('transacted_at', '<', $request->start_date)
                 ->selectRaw("SUM(CASE WHEN type IN ('payment','income_adjustment') THEN amount ELSE -amount END) as bal")
                 ->value('bal') ?? 0);
         }
 
         $periodTx = FinancialTransaction::where('type', '!=', 'order')
-            ->when(! $includeCogs, $noAssetDeductions)
+            ->when(! $includeAssetDeductions, $noAssetDeductions)
             ->when($request->start_date, fn ($q) => $q->whereDate('transacted_at', '>=', $request->start_date))
             ->when($request->end_date,   fn ($q) => $q->whereDate('transacted_at', '<=', $request->end_date))
             ->orderBy('transacted_at')->orderBy('id')
@@ -40,7 +40,7 @@ class FinancialTransactionController extends Controller {
 
         $q = FinancialTransaction::with(['order', 'tender', 'user'])
             ->where('type', '!=', 'order')
-            ->when(! $includeCogs, $noAssetDeductions)
+            ->when(! $includeAssetDeductions, $noAssetDeductions)
             ->orderByDesc('transacted_at')
             ->orderByDesc('id');
 
@@ -59,16 +59,16 @@ class FinancialTransactionController extends Controller {
 
     public function summary(Request $request): JsonResponse {
         $this->checkReports();
-        $start       = $request->start_date ? Carbon::parse($request->start_date)->startOfDay() : Carbon::today()->startOfDay();
-        $end         = $request->end_date   ? Carbon::parse($request->end_date)->endOfDay()     : Carbon::today()->endOfDay();
-        $includeCogs = $request->boolean('include_cogs', true);
+        $start                  = $request->start_date ? Carbon::parse($request->start_date)->startOfDay() : Carbon::today()->startOfDay();
+        $end                    = $request->end_date   ? Carbon::parse($request->end_date)->endOfDay()     : Carbon::today()->endOfDay();
+        $includeAssetDeductions = $request->boolean('include_asset_deductions', true);
 
         $noAssetDeductions = fn ($q) => $q->where('type', '!=', 'asset_deduction');
 
         $rows = FinancialTransaction::selectRaw('type, SUM(amount) as total, COUNT(*) as count')
             ->whereBetween('transacted_at', [$start, $end])
             ->where('type', '!=', 'order')
-            ->when(! $includeCogs, $noAssetDeductions)
+            ->when(! $includeAssetDeductions, $noAssetDeductions)
             ->groupBy('type')
             ->get()
             ->keyBy('type');
@@ -88,7 +88,7 @@ class FinancialTransactionController extends Controller {
         $netByTender = FinancialTransaction::whereBetween('transacted_at', [$start, $end])
             ->whereNotNull('payment_tender_id')
             ->where('type', '!=', 'order')
-            ->when(! $includeCogs, $noAssetDeductions)
+            ->when(! $includeAssetDeductions, $noAssetDeductions)
             ->with('tender')
             ->selectRaw("payment_tender_id,
                 SUM(CASE WHEN type IN ('payment','income_adjustment') THEN amount ELSE 0 END) as total_in,
@@ -111,22 +111,22 @@ class FinancialTransactionController extends Controller {
         $payroll   = (float)($rows['payroll']?->total ?? 0);
 
         $balanceAsOfEnd = (float) (FinancialTransaction::where('type', '!=', 'order')
-            ->when(! $includeCogs, $noAssetDeductions)
+            ->when(! $includeAssetDeductions, $noAssetDeductions)
             ->whereDate('transacted_at', '<=', $end->toDateString())
             ->selectRaw("SUM(CASE WHEN type IN ('payment','income_adjustment') THEN amount ELSE -amount END) as bal")
             ->value('bal') ?? 0.0);
 
         return response()->json([
-            'period'             => ['start' => $start->toDateString(), 'end' => $end->toDateString()],
-            'payments'           => ['total' => $payments,   'count' => $rows['payment']?->count  ?? 0],
-            'expenses'           => ['total' => $expenses,   'count' => $rows['expense']?->count  ?? 0],
-            'income_adjustments' => ['total' => $incomeAdj,  'count' => $rows['income_adjustment']?->count ?? 0],
-            'payroll'            => ['total' => $payroll,    'count' => $rows['payroll']?->count  ?? 0],
-            'net'                => $payments + $incomeAdj - $expenses - $payroll,
-            'balance_as_of_end'  => $balanceAsOfEnd,
-            'by_tender'          => $byTender,
-            'net_by_tender'      => $netByTender,
-            'include_cogs'       => $includeCogs,
+            'period'                  => ['start' => $start->toDateString(), 'end' => $end->toDateString()],
+            'payments'                => ['total' => $payments,   'count' => $rows['payment']?->count  ?? 0],
+            'expenses'                => ['total' => $expenses,   'count' => $rows['expense']?->count  ?? 0],
+            'income_adjustments'      => ['total' => $incomeAdj,  'count' => $rows['income_adjustment']?->count ?? 0],
+            'payroll'                 => ['total' => $payroll,    'count' => $rows['payroll']?->count  ?? 0],
+            'net'                     => $payments + $incomeAdj - $expenses - $payroll,
+            'balance_as_of_end'       => $balanceAsOfEnd,
+            'by_tender'               => $byTender,
+            'net_by_tender'           => $netByTender,
+            'include_asset_deductions' => $includeAssetDeductions,
         ]);
     }
 

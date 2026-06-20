@@ -100,20 +100,13 @@ class ReportService
         $grossMargin  = $netRevenue > 0 ? round(($grossProfit / $netRevenue) * 100, 2) : 0;
 
         // ── Operating expenses ────────────────────────────────────────────────
-        // Rules:
-        //   • Always exclude "COGS: ..." entries — these duplicate the order_items
-        //     cost_subtotal calculation already deducted in $deductedCogs above.
-        //   • When COGS is ON  → also exclude "Inventory Stock In: ..." entries.
-        //     Restocking is an asset purchase (Cash → Inventory). Its consumption is
-        //     captured by COGS when goods are sold. Including it here double-counts.
-        //   • When COGS is OFF → keep "Inventory Stock In: ..." as the cost proxy
-        //     (cash-basis view of costs since COGS is not tracked).
+        // When COGS is ON, inventory restock costs are asset purchases (Cash → Inventory)
+        // whose consumption is already captured by COGS from order item costs. Excluding
+        // them here prevents double-counting. When COGS is OFF they act as the cost proxy.
         $expenseBase = \App\Models\FinancialTransaction::where('type', 'expense')
-            ->whereBetween('transacted_at', [$start->startOfDay(), $end->copy()->endOfDay()])
-            ->where('description', 'not like', 'COGS:%');   // always strip — never double-count
+            ->whereBetween('transacted_at', [$start->startOfDay(), $end->copy()->endOfDay()]);
 
         if ($includeCogs) {
-            // Restock cost flows through COGS; remove it from opex to avoid double-entry
             $expenseBase->where('description', 'not like', 'Inventory Stock In%');
         }
 
