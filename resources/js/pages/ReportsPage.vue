@@ -993,12 +993,12 @@ onMounted(async () => {
 
                 <!-- Financial date range -->
                 <template v-if="tab === 'financial'">
-                    <div><label class="text-xs font-medium text-muted-foreground block mb-1">From</label>
-                        <input v-model="ftStartDate" type="date" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
-                    <div><label class="text-xs font-medium text-muted-foreground block mb-1">To</label>
-                        <input v-model="ftEndDate" type="date" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
-                    <div><label class="text-xs font-medium text-muted-foreground block mb-1">Type</label>
-                        <select v-model="ftTypeFilter" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
+                    <div class="flex-1 min-w-0 sm:flex-none"><label class="text-xs font-medium text-muted-foreground block mb-1">From</label>
+                        <input v-model="ftStartDate" type="date" class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
+                    <div class="flex-1 min-w-0 sm:flex-none"><label class="text-xs font-medium text-muted-foreground block mb-1">To</label>
+                        <input v-model="ftEndDate" type="date" class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
+                    <div class="flex-1 min-w-0 sm:flex-none"><label class="text-xs font-medium text-muted-foreground block mb-1">Type</label>
+                        <select v-model="ftTypeFilter" class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
                             <option value="">All Types</option>
                             <option value="order">Orders</option>
                             <option value="payment">Payments</option>
@@ -1420,7 +1420,49 @@ onMounted(async () => {
             </div>
 
             <div v-if="ftTransactions.length > 0" class="rounded-xl border bg-card shadow-sm overflow-hidden">
-                <div class="overflow-x-auto">
+
+                <!-- Mobile card list -->
+                <div class="md:hidden divide-y">
+                    <div v-for="tx in ftTransactions" :key="tx.id" class="px-4 py-3 hover:bg-muted/20 transition-colors">
+                        <div class="flex items-start justify-between gap-3">
+                            <div class="min-w-0 flex-1">
+                                <div class="flex items-center gap-2 flex-wrap mb-1">
+                                    <span :class="['rounded-full px-2 py-0.5 text-xs font-semibold', typeBadgeClass(tx.type)]">{{ typeLabel(tx.type) }}</span>
+                                    <span class="text-xs text-muted-foreground tabular-nums">{{ fmtDatetime(tx.transacted_at) }}</span>
+                                </div>
+                                <p class="text-sm font-medium leading-snug">{{ tx.description }}</p>
+                                <div class="flex items-center gap-2 mt-1 text-xs text-muted-foreground flex-wrap">
+                                    <span v-if="tx.tender?.name">{{ tx.tender.name }}</span>
+                                    <span v-if="tx.user?.name" class="opacity-60">{{ tx.user.name }}</span>
+                                </div>
+                            </div>
+                            <div class="flex flex-col items-end gap-1 shrink-0">
+                                <span class="font-bold tabular-nums text-sm" :class="isCredit(tx.type) ? 'text-green-600' : 'text-red-600'">
+                                    {{ isCredit(tx.type) ? '+' : '-' }}{{ fmt(tx.amount) }}
+                                </span>
+                                <span class="text-xs tabular-nums" :class="(tx.financial_balance ?? 0) >= 0 ? 'text-muted-foreground' : 'text-red-600'">
+                                    {{ fmt(tx.financial_balance ?? 0) }}
+                                </span>
+                                <div class="flex items-center gap-1 mt-1">
+                                    <button v-if="tx.type !== 'order'" @click="openEditFt(tx)"
+                                        class="rounded p-1 text-muted-foreground hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/30 transition"
+                                        title="Edit entry">
+                                        <Pencil class="h-3.5 w-3.5" />
+                                    </button>
+                                    <button v-if="tx.type === 'expense' || tx.type === 'income_adjustment'"
+                                        @click="deleteEntry(tx)" :disabled="ftDeleting === tx.id"
+                                        class="rounded p-1 text-muted-foreground hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 disabled:opacity-40 transition"
+                                        title="Delete entry">
+                                        <Trash2 class="h-3.5 w-3.5" />
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Desktop table -->
+                <div class="hidden md:block overflow-x-auto">
                     <table class="w-full text-sm">
                         <thead class="bg-muted/50 text-muted-foreground text-xs uppercase tracking-wide">
                             <tr>
@@ -1449,21 +1491,15 @@ onMounted(async () => {
                                 <td class="px-4 py-2 text-muted-foreground text-xs">{{ tx.user?.name ?? '—' }}</td>
                                 <td class="px-4 py-2 text-center">
                                     <div class="flex items-center justify-center gap-1">
-                                        <button
-                                            v-if="tx.type !== 'order'"
-                                            @click="openEditFt(tx)"
+                                        <button v-if="tx.type !== 'order'" @click="openEditFt(tx)"
                                             class="rounded p-1 text-muted-foreground hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/30 transition"
-                                            title="Edit entry"
-                                        >
+                                            title="Edit entry">
                                             <Pencil class="h-3.5 w-3.5" />
                                         </button>
-                                        <button
-                                            v-if="tx.type === 'expense' || tx.type === 'income_adjustment'"
-                                            @click="deleteEntry(tx)"
-                                            :disabled="ftDeleting === tx.id"
+                                        <button v-if="tx.type === 'expense' || tx.type === 'income_adjustment'"
+                                            @click="deleteEntry(tx)" :disabled="ftDeleting === tx.id"
                                             class="rounded p-1 text-muted-foreground hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 disabled:opacity-40 transition"
-                                            title="Delete entry"
-                                        >
+                                            title="Delete entry">
                                             <Trash2 class="h-3.5 w-3.5" />
                                         </button>
                                     </div>
@@ -1472,20 +1508,19 @@ onMounted(async () => {
                         </tbody>
                     </table>
                 </div>
+
                 <div v-if="ftMeta" class="flex items-center justify-between px-4 py-3 border-t text-xs text-muted-foreground">
                     <span>Page {{ ftMeta.current_page }} of {{ ftMeta.last_page }} &mdash; {{ ftMeta.total }} transactions</span>
                     <div class="flex items-center gap-1">
-                        <button
-                            @click="loadFinancial(ftPage - 1)"
-                            :disabled="ftPage <= 1"
-                            class="rounded px-2 py-1 border hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed"
-                        ><ChevronLeft class="h-3 w-3" /></button>
+                        <button @click="loadFinancial(ftPage - 1)" :disabled="ftPage <= 1"
+                            class="rounded px-2 py-1 border hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed">
+                            <ChevronLeft class="h-3 w-3" />
+                        </button>
                         <span class="px-2">{{ ftPage }}</span>
-                        <button
-                            @click="loadFinancial(ftPage + 1)"
-                            :disabled="ftPage >= ftMeta.last_page"
-                            class="rounded px-2 py-1 border hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed"
-                        ><ChevronRight class="h-3 w-3" /></button>
+                        <button @click="loadFinancial(ftPage + 1)" :disabled="ftPage >= ftMeta.last_page"
+                            class="rounded px-2 py-1 border hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed">
+                            <ChevronRight class="h-3 w-3" />
+                        </button>
                     </div>
                 </div>
             </div>
