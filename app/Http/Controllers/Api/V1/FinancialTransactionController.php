@@ -105,10 +105,11 @@ class FinancialTransactionController extends Controller {
             ])
             ->values();
 
-        $incomeAdj = (float)($rows['income_adjustment']?->total ?? 0);
-        $expenses  = (float)($rows['expense']?->total ?? 0);
-        $payments  = (float)($rows['payment']?->total ?? 0);
-        $payroll   = (float)($rows['payroll']?->total ?? 0);
+        $incomeAdj       = (float)($rows['income_adjustment']?->total ?? 0);
+        $expenses        = (float)($rows['expense']?->total ?? 0);
+        $payments        = (float)($rows['payment']?->total ?? 0);
+        $payroll         = (float)($rows['payroll']?->total ?? 0);
+        $assetDeductions = (float)($rows['asset_deduction']?->total ?? 0);
 
         $balanceAsOfEnd = (float) (FinancialTransaction::where('type', '!=', 'order')
             ->when(! $includeAssetDeductions, $noAssetDeductions)
@@ -116,14 +117,34 @@ class FinancialTransactionController extends Controller {
             ->selectRaw("SUM(CASE WHEN type IN ('payment','income_adjustment') THEN amount ELSE -amount END) as bal")
             ->value('bal') ?? 0.0);
 
+        // Running balance per tender as of end date (cumulative, not period-only).
+        $balByTender = FinancialTransaction::where('type', '!=', 'order')
+            ->when(! $includeAssetDeductions, $noAssetDeductions)
+            ->whereDate('transacted_at', '<=', $end->toDateString())
+            ->with('tender')
+            ->selectRaw("payment_tender_id,
+                SUM(CASE WHEN type IN ('payment','income_adjustment') THEN amount ELSE -amount END) as balance,
+                COUNT(*) as cnt")
+            ->groupBy('payment_tender_id')
+            ->get()
+            ->map(fn ($r) => [
+                'tender'  => $r->payment_tender_id ? ($r->tender?->name ?? 'Unknown') : 'Untagged',
+                'balance' => round((float) $r->balance, 2),
+                'count'   => (int) $r->cnt,
+            ])
+            ->sortByDesc('balance')
+            ->values();
+
         return response()->json([
             'period'                  => ['start' => $start->toDateString(), 'end' => $end->toDateString()],
-            'payments'                => ['total' => $payments,   'count' => $rows['payment']?->count  ?? 0],
-            'expenses'                => ['total' => $expenses,   'count' => $rows['expense']?->count  ?? 0],
-            'income_adjustments'      => ['total' => $incomeAdj,  'count' => $rows['income_adjustment']?->count ?? 0],
-            'payroll'                 => ['total' => $payroll,    'count' => $rows['payroll']?->count  ?? 0],
-            'net'                     => $payments + $incomeAdj - $expenses - $payroll,
+            'payments'                => ['total' => $payments,         'count' => (int) ($rows['payment']?->count          ?? 0)],
+            'expenses'                => ['total' => $expenses,         'count' => (int) ($rows['expense']?->count          ?? 0)],
+            'income_adjustments'      => ['total' => $incomeAdj,        'count' => (int) ($rows['income_adjustment']?->count ?? 0)],
+            'payroll'                 => ['total' => $payroll,          'count' => (int) ($rows['payroll']?->count          ?? 0)],
+            'asset_deductions'        => ['total' => $assetDeductions,  'count' => (int) ($rows['asset_deduction']?->count  ?? 0)],
+            'net'                     => $payments + $incomeAdj - $expenses - $payroll - $assetDeductions,
             'balance_as_of_end'       => $balanceAsOfEnd,
+            'balance_by_tender'       => $balByTender,
             'by_tender'               => $byTender,
             'net_by_tender'           => $netByTender,
             'include_asset_deductions' => $includeAssetDeductions,

@@ -24,7 +24,10 @@ interface FtSummary {
     expenses: { total: number; count: number }
     income_adjustments: { total: number; count: number }
     payroll: { total: number; count: number }
+    asset_deductions: { total: number; count: number }
     net: number
+    balance_as_of_end: number
+    balance_by_tender: { tender: string; balance: number; count: number }[]
     by_tender: { tender: string; total: number; count: number }[]
     net_by_tender: { tender: string; total_in: number; total_out: number; net: number; count: number }[]
     include_asset_deductions: boolean
@@ -64,6 +67,7 @@ const entrySaving = ref(false)
 const ftDeleting = ref<number | null>(null)
 const summaryOpen = ref(true)
 const showTenderBreakdown = ref(false)
+const showBalanceByTender = ref(false)
 const ftSearch = ref('')
 const ftSortKey = ref<'transacted_at' | 'type' | 'amount' | 'description'>('transacted_at')
 const ftSortDir = ref<'asc' | 'desc'>('desc')
@@ -146,7 +150,7 @@ const comparisonBars = computed(() => {
     if (!ftSummary.value) return []
     const s = ftSummary.value
     const income  = s.payments.total + (s.income_adjustments?.total ?? 0)
-    const outflow = s.expenses.total + (s.payroll?.total ?? 0)
+    const outflow = s.expenses.total + (s.payroll?.total ?? 0) + (s.asset_deductions?.total ?? 0)
     const payable = billsSummary.value?.total_due ?? 0
     const items = [
         { label: 'Total Income',  value: income,  barColor: 'bg-blue-500',    textColor: 'text-blue-600' },
@@ -741,7 +745,82 @@ onMounted(async () => {
         <div class="rounded-xl border bg-card shadow-sm overflow-hidden">
             <div class="p-4 border-b flex items-center justify-between">
                 <h2 class="font-bold text-sm flex items-center gap-2"><DollarSign class="h-4 w-4" /> Transactions</h2>
-                <p v-if="ftSearch" class="text-xs text-muted-foreground">{{ sortedTx.length }} result{{ sortedTx.length !== 1 ? 's' : '' }}</p>
+                <div class="flex items-center gap-3">
+                    <p v-if="ftSearch" class="text-xs text-muted-foreground">{{ sortedTx.length }} result{{ sortedTx.length !== 1 ? 's' : '' }}</p>
+                    <button v-if="ftSummary?.balance_by_tender?.length"
+                        @click="showBalanceByTender = !showBalanceByTender"
+                        :class="['flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors',
+                            showBalanceByTender ? 'bg-primary text-primary-foreground border-primary' : 'hover:bg-muted']">
+                        Balance by Tender
+                        <ChevronDown class="h-3 w-3 transition-transform duration-200" :class="showBalanceByTender ? 'rotate-180' : ''" />
+                    </button>
+                </div>
+            </div>
+
+            <!-- Balance by Tender collapsible -->
+            <div v-show="showBalanceByTender && ftSummary?.balance_by_tender?.length"
+                class="border-b bg-muted/20">
+                <div class="p-3">
+                    <p class="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                        Running Balance by Tender — as of {{ ftSummary?.period?.end }}
+                    </p>
+                    <!-- Mobile -->
+                    <div class="md:hidden space-y-1.5">
+                        <div v-for="row in ftSummary?.balance_by_tender" :key="row.tender"
+                            class="flex items-center justify-between rounded-lg bg-background border px-3 py-2">
+                            <div>
+                                <span class="text-sm font-semibold">{{ row.tender }}</span>
+                                <span class="ml-2 text-[11px] text-muted-foreground">{{ row.count }} txn{{ row.count !== 1 ? 's' : '' }}</span>
+                            </div>
+                            <span class="font-bold tabular-nums text-sm"
+                                :class="row.balance >= 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-600'">
+                                {{ row.balance >= 0 ? '' : '-' }}{{ fmt(Math.abs(row.balance)) }}
+                            </span>
+                        </div>
+                        <div class="flex items-center justify-between rounded-lg bg-muted/60 border px-3 py-2">
+                            <span class="text-sm font-bold">Total</span>
+                            <span class="font-black tabular-nums text-sm"
+                                :class="(ftSummary?.balance_as_of_end ?? 0) >= 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-600'">
+                                {{ fmt(ftSummary?.balance_as_of_end ?? 0) }}
+                            </span>
+                        </div>
+                    </div>
+                    <!-- Desktop -->
+                    <div class="hidden md:block overflow-x-auto">
+                        <table class="w-full text-xs">
+                            <thead>
+                                <tr class="border-b text-muted-foreground">
+                                    <th class="pb-1.5 text-left font-medium">Tender / Account</th>
+                                    <th class="pb-1.5 text-right font-medium">Txns</th>
+                                    <th class="pb-1.5 text-right font-medium">Running Balance</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-border">
+                                <tr v-for="row in ftSummary?.balance_by_tender" :key="row.tender"
+                                    class="hover:bg-muted/20 transition-colors">
+                                    <td class="py-1.5 font-semibold">{{ row.tender }}</td>
+                                    <td class="py-1.5 text-right tabular-nums text-muted-foreground">{{ row.count }}</td>
+                                    <td class="py-1.5 text-right tabular-nums font-bold"
+                                        :class="row.balance >= 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-600'">
+                                        {{ row.balance >= 0 ? '' : '-' }}{{ fmt(Math.abs(row.balance)) }}
+                                    </td>
+                                </tr>
+                            </tbody>
+                            <tfoot class="border-t border-border">
+                                <tr>
+                                    <td class="pt-1.5 font-bold">Total</td>
+                                    <td class="pt-1.5 text-right tabular-nums text-muted-foreground">
+                                        {{ ftSummary?.balance_by_tender?.reduce((s, r) => s + r.count, 0) }}
+                                    </td>
+                                    <td class="pt-1.5 text-right tabular-nums font-black"
+                                        :class="(ftSummary?.balance_as_of_end ?? 0) >= 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-600'">
+                                        {{ fmt(ftSummary?.balance_as_of_end ?? 0) }}
+                                    </td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                </div>
             </div>
 
             <!-- Mobile card list -->
