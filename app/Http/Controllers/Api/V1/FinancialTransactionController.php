@@ -179,9 +179,11 @@ class FinancialTransactionController extends Controller {
     }
 
     public function destroy(FinancialTransaction $financialTransaction): JsonResponse {
-        if (! auth()->user()?->hasAnyRole('admin', 'auditor')) abort(403);
+        $user = auth()->user();
 
-        if (! in_array($financialTransaction->type, ['expense', 'income_adjustment'])) {
+        if (! $user?->hasAnyRole('admin', 'auditor')) abort(403);
+
+        if (! $user?->hasRole('admin') && ! in_array($financialTransaction->type, ['expense', 'income_adjustment'])) {
             abort(422, 'Only manually created entries can be deleted.');
         }
 

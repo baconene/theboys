@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { Head } from '@inertiajs/vue3'
+import { Head, usePage } from '@inertiajs/vue3'
 import { toast } from 'vue-sonner'
 import api from '@/utils/api'
 import {
@@ -42,6 +42,10 @@ interface BillsSummary {
     total_due: number; overdue: number; upcoming: number; count: number
     period: { start: string; end: string }
 }
+
+// ── Auth ──────────────────────────────────────────────────────────────────────
+const page    = usePage()
+const isAdmin = computed(() => ((page.props.auth as any)?.roles ?? []).includes('admin'))
 
 // ── State ──────────────────────────────────────────────────────────────────────
 const today = new Date().toISOString().split('T')[0]
@@ -756,7 +760,8 @@ onMounted(async () => {
                                         title="Edit">
                                         <Pencil class="h-4 w-4" />
                                     </button>
-                                    <button @click="deleteTransaction(tx)" :disabled="ftDeleting === tx.id"
+                                    <button v-if="isAdmin || ['expense', 'income_adjustment'].includes(tx.type)"
+                                        @click="deleteTransaction(tx)" :disabled="ftDeleting === tx.id"
                                         class="text-red-600 hover:text-red-700 disabled:opacity-50 transition-colors"
                                         title="Delete">
                                         <Trash2 class="h-4 w-4" />
