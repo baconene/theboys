@@ -264,7 +264,7 @@ const others  = computed(() => props.advertisements.filter(a => a.type === 'anno
                     <!-- Title -->
                     <div>
                         <label class="block text-sm font-semibold mb-1.5">Title <span class="text-red-500">*</span></label>
-                        <input v-model="form.title" type="text" placeholder="e.g. Buy 1 Get 1 on Smash Burgers today!"
+                        <input v-model="form.title" type="text" placeholder="e.g. Buy 1 Get 1 on Grilled Burgers today!"
                             class="w-full rounded-lg border px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary" />
                     </div>
 

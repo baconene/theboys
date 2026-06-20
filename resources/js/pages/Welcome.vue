@@ -432,7 +432,7 @@ onMounted(async () => {
                 <img
                     id="hero-burger"
                     src="https://www.theboys.baconologies.com/storage/media/2e0d54bd-a94c-469f-bc55-724e2a1285df.png"
-                    alt="The Boys Smash Burger"
+                    alt="The Boys Grilled Burger"
                     class="w-[280px] sm:w-[380px] md:w-[480px] mx-auto select-none"
                     style="filter: drop-shadow(0 40px 80px rgba(249,115,22,0.55));
                            will-change: transform, opacity;"
@@ -440,7 +440,7 @@ onMounted(async () => {
                 />
 
                 <!-- Title — each span is a .hero-line for GSAP stagger -->
-                <h1 class="mt-8 leading-none tracking-tight uppercase select-none" aria-label="The Boys Smash Burger">
+                <h1 class="mt-8 leading-none tracking-tight uppercase select-none" aria-label="The Boys Grilled Burger">
                     <span class="hero-line block text-5xl sm:text-6xl md:text-8xl font-black text-white"
                         style="will-change: transform, opacity;">
                         THE BOYS
@@ -449,14 +449,14 @@ onMounted(async () => {
                         style="background: linear-gradient(90deg, #f97316, #fbbf24, #f97316);
                                -webkit-background-clip: text; -webkit-text-fill-color: transparent;
                                background-clip: text; will-change: transform, opacity;">
-                        SMASH BURGER
+                        GRILLED BURGER
                     </span>
                 </h1>
 
                 <!-- Subtitle tagline -->
                 <p class="hero-sub mt-5 text-sm sm:text-base text-gray-400 max-w-md leading-relaxed"
                     style="will-change: transform, opacity;">
-                    Flame-grilled, made fresh, served daily —
+                    100% pure beef, flame-grilled with cheese caps —
                     <span class="text-orange-400 font-semibold">find us in Calamba, Laguna.</span>
                 </p>
 
