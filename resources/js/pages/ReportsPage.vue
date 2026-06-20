@@ -859,18 +859,20 @@ onMounted(async () => {
     <Head title="Reports" />
 
     <div class="space-y-5">
-        <!-- Tab bar -->
-        <div class="flex flex-wrap gap-1 rounded-xl border bg-card p-1.5 shadow-sm">
-            <button
-                v-for="t in tabs" :key="t.key"
-                @click="switchTab(t.key)"
-                :class="[
-                    'rounded-lg px-4 py-2 text-sm font-medium transition',
-                    tab === t.key
-                        ? 'bg-primary text-primary-foreground shadow-sm'
-                        : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-                ]"
-            >{{ t.label }}</button>
+        <!-- Tab bar — horizontally scrollable so tabs never wrap on mobile -->
+        <div class="overflow-x-auto rounded-xl border bg-card shadow-sm scrollbar-none">
+            <div class="flex gap-1 p-1.5 w-max">
+                <button
+                    v-for="t in tabs" :key="t.key"
+                    @click="switchTab(t.key)"
+                    :class="[
+                        'rounded-lg px-4 py-2 text-sm font-medium transition whitespace-nowrap',
+                        tab === t.key
+                            ? 'bg-primary text-primary-foreground shadow-sm'
+                            : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                    ]"
+                >{{ t.label }}</button>
+            </div>
         </div>
 
         <!-- Trend Analytics (self-contained tab with its own filters) -->
@@ -953,10 +955,12 @@ onMounted(async () => {
 
                 <!-- Product sales date range -->
                 <template v-if="tab === 'products'">
-                    <div class="flex-1 min-w-0 sm:flex-none"><label class="text-xs font-medium text-muted-foreground block mb-1">From</label>
-                        <input v-model="prodDateFrom" type="date" class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
-                    <div class="flex-1 min-w-0 sm:flex-none"><label class="text-xs font-medium text-muted-foreground block mb-1">To</label>
-                        <input v-model="prodDateTo" type="date" class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
+                    <div class="flex gap-2 w-full sm:contents">
+                        <div class="flex-1 sm:flex-none"><label class="text-xs font-medium text-muted-foreground block mb-1">From</label>
+                            <input v-model="prodDateFrom" type="date" class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
+                        <div class="flex-1 sm:flex-none"><label class="text-xs font-medium text-muted-foreground block mb-1">To</label>
+                            <input v-model="prodDateTo" type="date" class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
+                    </div>
                 </template>
 
                 <!-- P&L date range -->
@@ -997,11 +1001,13 @@ onMounted(async () => {
 
                 <!-- Financial date range -->
                 <template v-if="tab === 'financial'">
-                    <div class="flex-1 min-w-0 sm:flex-none"><label class="text-xs font-medium text-muted-foreground block mb-1">From</label>
-                        <input v-model="ftStartDate" type="date" class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
-                    <div class="flex-1 min-w-0 sm:flex-none"><label class="text-xs font-medium text-muted-foreground block mb-1">To</label>
-                        <input v-model="ftEndDate" type="date" class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
-                    <div class="flex-1 min-w-0 sm:flex-none"><label class="text-xs font-medium text-muted-foreground block mb-1">Type</label>
+                    <div class="flex gap-2 w-full sm:contents">
+                        <div class="flex-1 sm:flex-none"><label class="text-xs font-medium text-muted-foreground block mb-1">From</label>
+                            <input v-model="ftStartDate" type="date" class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
+                        <div class="flex-1 sm:flex-none"><label class="text-xs font-medium text-muted-foreground block mb-1">To</label>
+                            <input v-model="ftEndDate" type="date" class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
+                    </div>
+                    <div class="flex-1 sm:flex-none"><label class="text-xs font-medium text-muted-foreground block mb-1">Type</label>
                         <select v-model="ftTypeFilter" class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
                             <option value="">All Types</option>
                             <option value="order">Orders</option>
