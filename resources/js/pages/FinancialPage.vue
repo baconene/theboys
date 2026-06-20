@@ -667,6 +667,9 @@ onMounted(async () => {
                     <select v-model="editForm.payment_tender_id"
                         class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
                         <option :value="null">— Not tagged —</option>
+                        <option
+                            v-if="editingTx?.tender && !tenders.some(t => t.id === editingTx!.tender!.id)"
+                            :value="editingTx.tender.id">{{ editingTx.tender.name }}</option>
                         <option v-for="t in tenders" :key="t.id" :value="t.id">{{ t.name }}</option>
                     </select>
                 </div>
