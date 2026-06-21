@@ -3,7 +3,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { Head } from '@inertiajs/vue3'
 import { toast } from 'vue-sonner'
 import api from '@/utils/api'
-import { RefreshCw, Pencil, X, Plus, Minus, Search, ShoppingCart, Smartphone, Monitor } from 'lucide-vue-next'
+import { RefreshCw, Pencil, X, Plus, Minus, Search, ShoppingCart, Smartphone, Monitor, ChevronDown, CheckCircle2 } from 'lucide-vue-next'
 
 defineOptions({
     layout: {
@@ -41,6 +41,11 @@ const togglePortrait = () => {
     portraitMode.value = !portraitMode.value
     localStorage.setItem('km_portrait', portraitMode.value ? '1' : '0')
 }
+
+// Completed orders
+const completedOrders = ref<Order[]>([])
+const completedOpen   = ref(true)
+const todayStr = new Date().toISOString().split('T')[0]
 
 // Edit modal
 const editOpen = ref(false)
@@ -132,11 +137,27 @@ const fetchOrders = async () => {
     } catch { /* silent */ }
 }
 
-const onVisible = () => { if (document.visibilityState === 'visible') fetchOrders() }
+const fetchCompleted = async () => {
+    try {
+        const res = await api.get('/api/v1/orders', {
+            params: { status: 'completed', date_from: todayStr, date_to: todayStr, per_page: 50, sort_by: 'created_at', sort_dir: 'desc' },
+        })
+        const list = res.data.data ?? []
+        completedOrders.value = (list as any[]).map(normalizeOrder)
+    } catch { /* silent */ }
+}
+
+const onVisible = () => {
+    if (document.visibilityState === 'visible') {
+        fetchOrders()
+        fetchCompleted()
+    }
+}
 
 onMounted(() => {
-    fetchOrders()                                   // immediate first load — no 5s blank wait
-    pollInterval = setInterval(fetchOrders, 3000)   // poll every 3s
+    fetchOrders()
+    fetchCompleted()
+    pollInterval = setInterval(() => { fetchOrders(); fetchCompleted() }, 10000)
     document.addEventListener('visibilitychange', onVisible)
 })
 onUnmounted(() => {
@@ -149,6 +170,7 @@ const updateStatus = async (orderId: number, status: string) => {
     try {
         await api.patch(`/api/v1/orders/${orderId}/status`, { status })
         await fetchOrders()
+        if (status === 'completed') await fetchCompleted()
         toast.success(`Order updated → ${status}`)
     } catch (err: any) {
         toast.error(err.response?.data?.message ?? 'Failed to update')
@@ -374,6 +396,64 @@ const saveEdit = async () => {
                 </div>
             </div>
 
+        </div>
+
+        <!-- ── Completed Orders ──────────────────────────────────── -->
+        <div class="rounded-xl border bg-card shadow-sm overflow-hidden">
+            <button @click="completedOpen = !completedOpen"
+                class="w-full flex items-center justify-between px-4 py-3 hover:bg-muted/30 transition-colors">
+                <div class="flex items-center gap-2">
+                    <CheckCircle2 class="h-4 w-4 text-green-600 shrink-0" />
+                    <span class="font-bold text-sm">Completed Today</span>
+                    <span class="rounded-full bg-green-100 text-green-700 dark:bg-green-950/30 dark:text-green-400 text-xs font-semibold px-2 py-0.5">
+                        {{ completedOrders.length }}
+                    </span>
+                </div>
+                <ChevronDown class="h-4 w-4 text-muted-foreground transition-transform duration-200"
+                    :class="completedOpen ? 'rotate-180' : ''" />
+            </button>
+
+            <div v-show="completedOpen" class="border-t">
+                <div v-if="completedOrders.length === 0" class="px-4 py-8 text-center text-sm text-muted-foreground">
+                    No completed orders yet today.
+                </div>
+                <div v-else class="divide-y">
+                    <div v-for="order in completedOrders" :key="order.id"
+                        class="flex items-start gap-3 px-4 py-3 hover:bg-muted/20 transition-colors">
+                        <!-- Queue / ID -->
+                        <div class="shrink-0 w-14 text-center">
+                            <p class="text-lg font-black text-muted-foreground leading-tight">
+                                {{ order.queue_number ? '#' + order.queue_number : '#' + order.id }}
+                            </p>
+                            <p class="text-[10px] text-muted-foreground/60">{{ ageMinutes(order.created_at) }}m ago</p>
+                        </div>
+                        <!-- Items -->
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center gap-1.5 flex-wrap mb-0.5">
+                                <span :class="['text-xs rounded-full px-1.5 py-0.5 font-semibold', paymentBadge(order.payment_status).cls]">
+                                    {{ paymentBadge(order.payment_status).label }}
+                                </span>
+                                <span class="text-xs text-muted-foreground capitalize">
+                                    {{ order.order_type.replace('_', ' ') }}<span v-if="order.table_number"> · {{ order.table_number }}</span>
+                                </span>
+                                <span v-if="order.customer_name" class="text-xs font-medium truncate">{{ order.customer_name }}</span>
+                            </div>
+                            <p class="text-xs text-muted-foreground truncate">
+                                {{ order.items.map(i => i.quantity + '× ' + i.product.name).join(', ') }}
+                            </p>
+                            <p v-if="order.notes" class="text-xs text-muted-foreground italic truncate mt-0.5">{{ order.notes }}</p>
+                        </div>
+                        <!-- Total + reopen -->
+                        <div class="shrink-0 text-right">
+                            <p class="text-sm font-bold text-primary">{{ formatPrice(order.total_amount) }}</p>
+                            <button @click="updateStatus(order.id, 'ready')" :disabled="updatingId === order.id"
+                                class="mt-1 text-[10px] font-semibold rounded-full border px-2 py-0.5 hover:bg-muted text-muted-foreground disabled:opacity-40 transition-colors">
+                                Reopen
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
