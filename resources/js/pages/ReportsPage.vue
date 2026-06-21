@@ -502,6 +502,8 @@ const loadOrders = async (page = 1) => {
     ordersMeta.value = res.data.meta ?? null
 }
 
+const editOrder = (order: OrderRow) => router.visit('/orders/' + order.id)
+
 const deleteOrder = async (order: OrderRow) => {
     if (!confirm(`Delete Order #${order.id}?\nThis cannot be undone.`)) return
     ordDeleting.value = order.id
@@ -1087,7 +1089,7 @@ onMounted(async () => {
                             </div>
                             <div class="flex items-center gap-2 shrink-0">
                                 <span class="font-bold text-sm">{{ fmt(order.total_amount) }}</span>
-                                <button @click="router.visit(`/orders/${order.id}`)"
+                                <button @click.stop="editOrder(order)"
                                     class="text-muted-foreground hover:text-primary transition-colors p-1"
                                     title="Edit order">
                                     <Pencil class="h-4 w-4" />
@@ -1153,7 +1155,7 @@ onMounted(async () => {
                                 <td class="px-4 py-3 text-xs text-muted-foreground max-w-[140px] truncate">{{ order.notes ?? '—' }}</td>
                                 <td class="px-4 py-3 text-center" @click.stop>
                                     <div class="flex items-center justify-center gap-2">
-                                        <button @click="router.visit(`/orders/${order.id}`)"
+                                        <button @click="editOrder(order)"
                                             class="text-muted-foreground hover:text-primary transition-colors"
                                             title="Edit order">
                                             <Pencil class="h-4 w-4" />
