@@ -103,6 +103,7 @@ const ordPayment = ref('')
 const ordersData = ref<OrderRow[]>([])
 const ordersMeta = ref<any>(null)
 const ordPage = ref(1)
+const ordDeleting = ref<number | null>(null)
 
 // ── Inventory transactions ─────────────────────────────────────────────────────
 const invDateFrom = ref(thirtyDaysAgo)
@@ -499,6 +500,20 @@ const loadOrders = async (page = 1) => {
         total_amount: parseFloat(o.total_amount ?? 0),
     }))
     ordersMeta.value = res.data.meta ?? null
+}
+
+const deleteOrder = async (order: OrderRow) => {
+    if (!confirm(`Delete Order #${order.id}?\nThis cannot be undone.`)) return
+    ordDeleting.value = order.id
+    try {
+        await api.delete(`/api/v1/orders/${order.id}`)
+        toast.success(`Order #${order.id} deleted.`)
+        await loadOrders(ordPage.value)
+    } catch (err: any) {
+        toast.error(err.response?.data?.message ?? 'Failed to delete order.')
+    } finally {
+        ordDeleting.value = null
+    }
 }
 
 const loadInventory = async (page = 1) => {
@@ -1072,6 +1087,7 @@ onMounted(async () => {
                                 <th class="px-4 py-3 text-left">Payment</th>
                                 <th class="px-4 py-3 text-right">Total</th>
                                 <th class="px-4 py-3 text-left">Notes</th>
+                                <th class="px-4 py-3 text-center">Actions</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y">
@@ -1090,9 +1106,26 @@ onMounted(async () => {
                                 <td class="px-4 py-3"><span :class="['rounded-full px-2 py-0.5 text-xs font-semibold capitalize', payBadge(order.payment_status)]">{{ order.payment_status }}</span></td>
                                 <td class="px-4 py-3 text-right font-bold">{{ fmt(order.total_amount) }}</td>
                                 <td class="px-4 py-3 text-xs text-muted-foreground max-w-[140px] truncate">{{ order.notes ?? '—' }}</td>
+                                <td class="px-4 py-3 text-center" @click.stop>
+                                    <div class="flex items-center justify-center gap-2">
+                                        <button
+                                            @click="router.visit(`/orders/${order.id}`)"
+                                            class="text-muted-foreground hover:text-primary transition-colors"
+                                            title="Edit order">
+                                            <Pencil class="h-4 w-4" />
+                                        </button>
+                                        <button
+                                            @click="deleteOrder(order)"
+                                            :disabled="ordDeleting === order.id"
+                                            class="text-red-500 hover:text-red-700 disabled:opacity-40 transition-colors"
+                                            title="Delete order">
+                                            <Trash2 class="h-4 w-4" />
+                                        </button>
+                                    </div>
+                                </td>
                             </tr>
                             <tr v-if="ordersData.length === 0 && !loading">
-                                <td colspan="9" class="px-4 py-10 text-center text-muted-foreground">No orders found. Adjust filters and click Generate.</td>
+                                <td colspan="10" class="px-4 py-10 text-center text-muted-foreground">No orders found. Adjust filters and click Generate.</td>
                             </tr>
                         </tbody>
                     </table>
