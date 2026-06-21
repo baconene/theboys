@@ -25,7 +25,7 @@ interface Order {
     table_number: string | null
     customer_name: string | null; customer_contact: string | null; customer_address: string | null
     notes: string | null
-    total_amount: number; created_at: string; items: OrderItem[]
+    total_amount: number; created_at: string; completed_at: string | null; items: OrderItem[]
 }
 interface Product { id: number; name: string; price: number; category: string | null }
 
@@ -72,6 +72,7 @@ function normalizeOrder(o: any): Order {
         notes: o.notes ?? null,
         total_amount: parseFloat(o.total_amount ?? 0),
         created_at: o.created_at,
+        completed_at: o.completed_at ?? null,
         items: (o.items ?? []).map((i: any) => ({
             id: i.id,
             quantity: i.quantity,
@@ -88,12 +89,27 @@ function normalizeOrder(o: any): Order {
 
 const formatPrice = (v: number) => '₱' + (v ?? 0).toFixed(2)
 
-const ageMinutes = (d: string) => Math.floor((Date.now() - new Date(d).getTime()) / 60000)
+const ageMinutes = (d: string) => Math.floor((Date.now() - new Date(d.replace(' ', 'T')).getTime()) / 60000)
 const ageClass = (d: string) => {
     const m = ageMinutes(d)
     if (m >= 15) return 'bg-red-100 text-red-700 dark:bg-red-950/30'
     if (m >= 8)  return 'bg-yellow-100 text-yellow-700 dark:bg-yellow-950/30'
     return 'bg-gray-100 text-gray-600 dark:bg-gray-800'
+}
+
+const fmtElapsed = (created: string, completed: string | null) => {
+    if (!completed) return '—'
+    const ms = new Date(completed.replace(' ', 'T')).getTime() - new Date(created.replace(' ', 'T')).getTime()
+    if (ms < 0) return '—'
+    const totalSec = Math.floor(ms / 1000)
+    const m = Math.floor(totalSec / 60)
+    const s = totalSec % 60
+    return m > 0 ? `${m}m ${s}s` : `${s}s`
+}
+
+const fmtTime = (d: string | null) => {
+    if (!d) return '—'
+    return new Date(d.replace(' ', 'T')).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit', hour12: true })
 }
 
 const paymentBadge = (s: string) => {
@@ -425,7 +441,7 @@ const saveEdit = async () => {
                             <p class="text-lg font-black text-muted-foreground leading-tight">
                                 {{ order.queue_number ? '#' + order.queue_number : '#' + order.id }}
                             </p>
-                            <p class="text-[10px] text-muted-foreground/60">{{ ageMinutes(order.created_at) }}m ago</p>
+                            <p class="text-[10px] text-muted-foreground/60">{{ fmtTime(order.completed_at) }}</p>
                         </div>
                         <!-- Items -->
                         <div class="flex-1 min-w-0">
@@ -443,11 +459,15 @@ const saveEdit = async () => {
                             </p>
                             <p v-if="order.notes" class="text-xs text-muted-foreground italic truncate mt-0.5">{{ order.notes }}</p>
                         </div>
-                        <!-- Total + reopen -->
-                        <div class="shrink-0 text-right">
+                        <!-- Elapsed + total + reopen -->
+                        <div class="shrink-0 text-right space-y-0.5">
                             <p class="text-sm font-bold text-primary">{{ formatPrice(order.total_amount) }}</p>
+                            <p class="text-xs text-muted-foreground">
+                                <span class="font-medium">{{ fmtElapsed(order.created_at, order.completed_at) }}</span>
+                                <span class="text-muted-foreground/60"> served</span>
+                            </p>
                             <button @click="updateStatus(order.id, 'ready')" :disabled="updatingId === order.id"
-                                class="mt-1 text-[10px] font-semibold rounded-full border px-2 py-0.5 hover:bg-muted text-muted-foreground disabled:opacity-40 transition-colors">
+                                class="text-[10px] font-semibold rounded-full border px-2 py-0.5 hover:bg-muted text-muted-foreground disabled:opacity-40 transition-colors">
                                 Reopen
                             </button>
                         </div>
