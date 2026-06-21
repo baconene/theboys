@@ -3,7 +3,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { Head } from '@inertiajs/vue3'
 import { toast } from 'vue-sonner'
 import api from '@/utils/api'
-import { RefreshCw, Pencil, X, Plus, Minus, Search, ShoppingCart } from 'lucide-vue-next'
+import { RefreshCw, Pencil, X, Plus, Minus, Search, ShoppingCart, Smartphone, Monitor } from 'lucide-vue-next'
 
 defineOptions({
     layout: {
@@ -35,6 +35,12 @@ const props = defineProps<{ initialOrders: Order[]; products: Product[] }>()
 const orders = ref<Order[]>(props.initialOrders.map(normalizeOrder))
 const updatingId = ref<number | null>(null)
 let pollInterval: ReturnType<typeof setInterval> | null = null
+
+const portraitMode = ref(localStorage.getItem('km_portrait') === '1')
+const togglePortrait = () => {
+    portraitMode.value = !portraitMode.value
+    localStorage.setItem('km_portrait', portraitMode.value ? '1' : '0')
+}
 
 // Edit modal
 const editOpen = ref(false)
@@ -218,65 +224,70 @@ const saveEdit = async () => {
 <template>
     <Head title="Kitchen Monitor" />
 
-    <div class="space-y-6">
-        <!-- Stats -->
-        <div class="grid grid-cols-3 gap-4">
-            <div class="rounded-xl border bg-yellow-50 dark:bg-yellow-950/20 p-4 text-center">
-                <p class="text-xs font-medium text-yellow-700 dark:text-yellow-400 uppercase tracking-wide">Pending</p>
-                <p class="text-4xl font-black text-yellow-600 mt-1">{{ pending.length }}</p>
+    <div class="space-y-4">
+        <!-- Header row: stats + orientation toggle -->
+        <div class="flex items-center gap-3">
+            <div class="grid grid-cols-3 gap-3 flex-1">
+                <div class="rounded-xl border bg-yellow-50 dark:bg-yellow-950/20 p-3 text-center">
+                    <p class="text-xs font-medium text-yellow-700 dark:text-yellow-400 uppercase tracking-wide">Pending</p>
+                    <p class="text-3xl font-black text-yellow-600 mt-0.5">{{ pending.length }}</p>
+                </div>
+                <div class="rounded-xl border bg-blue-50 dark:bg-blue-950/20 p-3 text-center">
+                    <p class="text-xs font-medium text-blue-700 dark:text-blue-400 uppercase tracking-wide">Preparing</p>
+                    <p class="text-3xl font-black text-blue-600 mt-0.5">{{ preparing.length }}</p>
+                </div>
+                <div class="rounded-xl border bg-green-50 dark:bg-green-950/20 p-3 text-center">
+                    <p class="text-xs font-medium text-green-700 dark:text-green-400 uppercase tracking-wide">Ready</p>
+                    <p class="text-3xl font-black text-green-600 mt-0.5">{{ ready.length }}</p>
+                </div>
             </div>
-            <div class="rounded-xl border bg-blue-50 dark:bg-blue-950/20 p-4 text-center">
-                <p class="text-xs font-medium text-blue-700 dark:text-blue-400 uppercase tracking-wide">Preparing</p>
-                <p class="text-4xl font-black text-blue-600 mt-1">{{ preparing.length }}</p>
-            </div>
-            <div class="rounded-xl border bg-green-50 dark:bg-green-950/20 p-4 text-center">
-                <p class="text-xs font-medium text-green-700 dark:text-green-400 uppercase tracking-wide">Ready</p>
-                <p class="text-4xl font-black text-green-600 mt-1">{{ ready.length }}</p>
-            </div>
+            <button @click="togglePortrait"
+                :class="['shrink-0 flex flex-col items-center gap-1 rounded-xl border px-3 py-2 text-xs font-semibold transition-colors',
+                    portraitMode ? 'bg-primary text-primary-foreground border-primary' : 'hover:bg-muted text-muted-foreground']"
+                :title="portraitMode ? 'Switch to landscape' : 'Switch to portrait (3-column)'">
+                <Smartphone v-if="portraitMode" class="h-5 w-5" />
+                <Monitor v-else class="h-5 w-5" />
+                <span>{{ portraitMode ? 'Portrait' : 'Landscape' }}</span>
+            </button>
         </div>
 
         <!-- Columns -->
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div :class="['grid gap-4', portraitMode ? 'grid-cols-3' : 'grid-cols-1 lg:grid-cols-3']">
 
             <!-- Pending -->
             <div>
-                <h2 class="text-sm font-bold uppercase tracking-wide text-yellow-600 mb-3 flex items-center gap-2">
-                    <span class="h-2 w-2 rounded-full bg-yellow-400 inline-block" /> Pending
+                <h2 :class="['font-bold uppercase tracking-wide text-yellow-600 mb-2 flex items-center gap-1.5', portraitMode ? 'text-xs' : 'text-sm mb-3']">
+                    <span class="h-2 w-2 rounded-full bg-yellow-400 inline-block shrink-0" /> Pending
                 </h2>
-                <div class="space-y-3">
-                    <div v-if="pending.length === 0" class="rounded-xl border-2 border-dashed p-6 text-center text-sm text-muted-foreground">No pending orders</div>
+                <div :class="portraitMode ? 'space-y-2' : 'space-y-3'">
+                    <div v-if="pending.length === 0" class="rounded-xl border-2 border-dashed p-4 text-center text-xs text-muted-foreground">No pending</div>
                     <div v-for="order in pending" :key="order.id"
                          class="rounded-xl border-l-4 border-yellow-500 bg-card shadow-sm">
-                        <div class="p-4">
+                        <div :class="portraitMode ? 'p-2' : 'p-4'">
                             <div class="flex items-start justify-between mb-1">
-                                <span class="text-2xl font-black">{{ order.queue_number ? '#' + order.queue_number : 'Order #' + order.id }}</span>
-                                <div class="flex items-center gap-1.5">
-                                    <span :class="['text-xs rounded-full px-2 py-0.5 font-medium', ageClass(order.created_at)]">{{ ageMinutes(order.created_at) }}m</span>
-                                    <button @click="openEdit(order)" class="rounded-full p-1 hover:bg-muted text-muted-foreground" title="Edit"><Pencil class="h-3.5 w-3.5" /></button>
-                                    <button @click="cancelOrder(order.id)" :disabled="updatingId === order.id" class="rounded-full p-1 hover:bg-red-50 dark:hover:bg-red-950/30 text-muted-foreground hover:text-red-600 disabled:opacity-40" title="Cancel order"><X class="h-3.5 w-3.5" /></button>
+                                <span :class="portraitMode ? 'text-base font-black leading-tight' : 'text-2xl font-black'">{{ order.queue_number ? '#' + order.queue_number : '#' + order.id }}</span>
+                                <div class="flex items-center gap-1">
+                                    <span :class="['text-xs rounded-full px-1.5 py-0.5 font-medium', ageClass(order.created_at)]">{{ ageMinutes(order.created_at) }}m</span>
+                                    <button @click="openEdit(order)" class="rounded-full p-0.5 hover:bg-muted text-muted-foreground" title="Edit"><Pencil class="h-3 w-3" /></button>
+                                    <button @click="cancelOrder(order.id)" :disabled="updatingId === order.id" class="rounded-full p-0.5 hover:bg-red-50 dark:hover:bg-red-950/30 text-muted-foreground hover:text-red-600 disabled:opacity-40" title="Cancel"><X class="h-3 w-3" /></button>
                                 </div>
                             </div>
-                            <div class="flex flex-wrap items-center gap-1.5 mb-2">
-                                <span :class="['text-xs rounded-full px-2 py-0.5 font-semibold', paymentBadge(order.payment_status).cls]">{{ paymentBadge(order.payment_status).label }}</span>
-                                <span class="text-xs text-muted-foreground capitalize">{{ order.order_type.replace('_', ' ') }}<span v-if="order.table_number"> · {{ order.table_number }}</span></span>
-                                <span v-if="order.customer_name" class="text-xs font-semibold text-foreground">{{ order.customer_name }}</span>
-                                <span v-if="order.customer_contact" class="text-xs text-muted-foreground">📞 {{ order.customer_contact }}</span>
+                            <div class="flex flex-wrap items-center gap-1 mb-1">
+                                <span :class="['text-xs rounded-full px-1.5 py-0.5 font-semibold', paymentBadge(order.payment_status).cls]">{{ paymentBadge(order.payment_status).label }}</span>
+                                <span class="text-xs text-muted-foreground capitalize truncate">{{ order.order_type.replace('_',' ') }}<span v-if="order.table_number"> · {{ order.table_number }}</span></span>
                             </div>
-                            <ul class="text-sm space-y-0.5 mb-2">
-                                <li v-for="item in order.items" :key="item.id">
+                            <ul :class="['space-y-0.5 mb-1', portraitMode ? 'text-xs' : 'text-sm']">
+                                <li v-for="item in order.items" :key="item.id" class="truncate">
                                     <span class="font-bold">{{ item.quantity }}×</span> {{ item.product.name }}
                                 </li>
                             </ul>
-                            <div class="flex justify-between items-start mb-3">
-                                <div class="flex-1 mr-2 space-y-0.5">
-                                    <p v-if="order.notes" class="text-xs text-muted-foreground italic">{{ order.notes }}</p>
-                                    <p v-if="order.customer_address" class="text-xs text-orange-600 dark:text-orange-400 font-medium">📍 {{ order.customer_address }}</p>
-                                </div>
-                                <span class="text-sm font-bold text-primary shrink-0">{{ formatPrice(order.total_amount) }}</span>
+                            <div class="flex justify-between items-start mb-2">
+                                <p v-if="order.notes" class="text-xs text-muted-foreground italic truncate flex-1 mr-1">{{ order.notes }}</p>
+                                <span :class="['font-bold text-primary shrink-0', portraitMode ? 'text-xs' : 'text-sm']">{{ formatPrice(order.total_amount) }}</span>
                             </div>
                             <button @click="updateStatus(order.id, 'preparing')" :disabled="updatingId === order.id"
-                                class="w-full rounded-lg bg-blue-600 py-2 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-50">
-                                <RefreshCw v-if="updatingId === order.id" class="inline h-3 w-3 animate-spin mr-1" />Start Preparing
+                                :class="['w-full rounded-lg bg-blue-600 font-bold text-white hover:bg-blue-700 disabled:opacity-50', portraitMode ? 'py-1 text-xs' : 'py-2 text-sm']">
+                                <RefreshCw v-if="updatingId === order.id" class="inline h-3 w-3 animate-spin mr-1" />{{ portraitMode ? 'Prepare' : 'Start Preparing' }}
                             </button>
                         </div>
                     </div>
@@ -285,43 +296,38 @@ const saveEdit = async () => {
 
             <!-- Preparing -->
             <div>
-                <h2 class="text-sm font-bold uppercase tracking-wide text-blue-600 mb-3 flex items-center gap-2">
-                    <span class="h-2 w-2 rounded-full bg-blue-400 inline-block" /> Preparing
+                <h2 :class="['font-bold uppercase tracking-wide text-blue-600 mb-2 flex items-center gap-1.5', portraitMode ? 'text-xs' : 'text-sm mb-3']">
+                    <span class="h-2 w-2 rounded-full bg-blue-400 inline-block shrink-0" /> Preparing
                 </h2>
-                <div class="space-y-3">
-                    <div v-if="preparing.length === 0" class="rounded-xl border-2 border-dashed p-6 text-center text-sm text-muted-foreground">Nothing being prepared</div>
+                <div :class="portraitMode ? 'space-y-2' : 'space-y-3'">
+                    <div v-if="preparing.length === 0" class="rounded-xl border-2 border-dashed p-4 text-center text-xs text-muted-foreground">None</div>
                     <div v-for="order in preparing" :key="order.id"
                          class="rounded-xl border-l-4 border-blue-500 bg-card shadow-sm">
-                        <div class="p-4">
+                        <div :class="portraitMode ? 'p-2' : 'p-4'">
                             <div class="flex items-start justify-between mb-1">
-                                <span class="text-2xl font-black">{{ order.queue_number ? '#' + order.queue_number : 'Order #' + order.id }}</span>
-                                <div class="flex items-center gap-1.5">
-                                    <span :class="['text-xs rounded-full px-2 py-0.5 font-medium', ageClass(order.created_at)]">{{ ageMinutes(order.created_at) }}m</span>
-                                    <button @click="openEdit(order)" class="rounded-full p-1 hover:bg-muted text-muted-foreground" title="Edit"><Pencil class="h-3.5 w-3.5" /></button>
-                                    <button @click="cancelOrder(order.id)" :disabled="updatingId === order.id" class="rounded-full p-1 hover:bg-red-50 dark:hover:bg-red-950/30 text-muted-foreground hover:text-red-600 disabled:opacity-40" title="Cancel order"><X class="h-3.5 w-3.5" /></button>
+                                <span :class="portraitMode ? 'text-base font-black leading-tight' : 'text-2xl font-black'">{{ order.queue_number ? '#' + order.queue_number : '#' + order.id }}</span>
+                                <div class="flex items-center gap-1">
+                                    <span :class="['text-xs rounded-full px-1.5 py-0.5 font-medium', ageClass(order.created_at)]">{{ ageMinutes(order.created_at) }}m</span>
+                                    <button @click="openEdit(order)" class="rounded-full p-0.5 hover:bg-muted text-muted-foreground" title="Edit"><Pencil class="h-3 w-3" /></button>
+                                    <button @click="cancelOrder(order.id)" :disabled="updatingId === order.id" class="rounded-full p-0.5 hover:bg-red-50 dark:hover:bg-red-950/30 text-muted-foreground hover:text-red-600 disabled:opacity-40" title="Cancel"><X class="h-3 w-3" /></button>
                                 </div>
                             </div>
-                            <div class="flex flex-wrap items-center gap-1.5 mb-2">
-                                <span :class="['text-xs rounded-full px-2 py-0.5 font-semibold', paymentBadge(order.payment_status).cls]">{{ paymentBadge(order.payment_status).label }}</span>
-                                <span class="text-xs text-muted-foreground capitalize">{{ order.order_type.replace('_', ' ') }}<span v-if="order.table_number"> · {{ order.table_number }}</span></span>
-                                <span v-if="order.customer_name" class="text-xs font-semibold text-foreground">{{ order.customer_name }}</span>
-                                <span v-if="order.customer_contact" class="text-xs text-muted-foreground">📞 {{ order.customer_contact }}</span>
+                            <div class="flex flex-wrap items-center gap-1 mb-1">
+                                <span :class="['text-xs rounded-full px-1.5 py-0.5 font-semibold', paymentBadge(order.payment_status).cls]">{{ paymentBadge(order.payment_status).label }}</span>
+                                <span class="text-xs text-muted-foreground capitalize truncate">{{ order.order_type.replace('_',' ') }}<span v-if="order.table_number"> · {{ order.table_number }}</span></span>
                             </div>
-                            <ul class="text-sm space-y-0.5 mb-2">
-                                <li v-for="item in order.items" :key="item.id">
+                            <ul :class="['space-y-0.5 mb-1', portraitMode ? 'text-xs' : 'text-sm']">
+                                <li v-for="item in order.items" :key="item.id" class="truncate">
                                     <span class="font-bold">{{ item.quantity }}×</span> {{ item.product.name }}
                                 </li>
                             </ul>
-                            <div class="flex justify-between items-start mb-3">
-                                <div class="flex-1 mr-2 space-y-0.5">
-                                    <p v-if="order.notes" class="text-xs text-muted-foreground italic">{{ order.notes }}</p>
-                                    <p v-if="order.customer_address" class="text-xs text-orange-600 dark:text-orange-400 font-medium">📍 {{ order.customer_address }}</p>
-                                </div>
-                                <span class="text-sm font-bold text-primary shrink-0">{{ formatPrice(order.total_amount) }}</span>
+                            <div class="flex justify-between items-start mb-2">
+                                <p v-if="order.notes" class="text-xs text-muted-foreground italic truncate flex-1 mr-1">{{ order.notes }}</p>
+                                <span :class="['font-bold text-primary shrink-0', portraitMode ? 'text-xs' : 'text-sm']">{{ formatPrice(order.total_amount) }}</span>
                             </div>
                             <button @click="updateStatus(order.id, 'ready')" :disabled="updatingId === order.id"
-                                class="w-full rounded-lg bg-green-600 py-2 text-sm font-bold text-white hover:bg-green-700 disabled:opacity-50">
-                                <RefreshCw v-if="updatingId === order.id" class="inline h-3 w-3 animate-spin mr-1" />Mark Ready
+                                :class="['w-full rounded-lg bg-green-600 font-bold text-white hover:bg-green-700 disabled:opacity-50', portraitMode ? 'py-1 text-xs' : 'py-2 text-sm']">
+                                <RefreshCw v-if="updatingId === order.id" class="inline h-3 w-3 animate-spin mr-1" />{{ portraitMode ? 'Ready' : 'Mark Ready' }}
                             </button>
                         </div>
                     </div>
@@ -330,43 +336,38 @@ const saveEdit = async () => {
 
             <!-- Ready -->
             <div>
-                <h2 class="text-sm font-bold uppercase tracking-wide text-green-600 mb-3 flex items-center gap-2">
-                    <span class="h-2 w-2 rounded-full bg-green-400 inline-block" /> Ready for Pickup
+                <h2 :class="['font-bold uppercase tracking-wide text-green-600 mb-2 flex items-center gap-1.5', portraitMode ? 'text-xs' : 'text-sm mb-3']">
+                    <span class="h-2 w-2 rounded-full bg-green-400 inline-block shrink-0" /> Ready
                 </h2>
-                <div class="space-y-3">
-                    <div v-if="ready.length === 0" class="rounded-xl border-2 border-dashed p-6 text-center text-sm text-muted-foreground">No orders ready</div>
+                <div :class="portraitMode ? 'space-y-2' : 'space-y-3'">
+                    <div v-if="ready.length === 0" class="rounded-xl border-2 border-dashed p-4 text-center text-xs text-muted-foreground">None ready</div>
                     <div v-for="order in ready" :key="order.id"
                          class="rounded-xl border-l-4 border-green-500 bg-card shadow-sm">
-                        <div class="p-4">
+                        <div :class="portraitMode ? 'p-2' : 'p-4'">
                             <div class="flex items-start justify-between mb-1">
-                                <span class="text-2xl font-black">{{ order.queue_number ? '#' + order.queue_number : 'Order #' + order.id }}</span>
-                                <div class="flex items-center gap-1.5">
-                                    <span :class="['text-xs rounded-full px-2 py-0.5 font-medium', ageClass(order.created_at)]">{{ ageMinutes(order.created_at) }}m</span>
-                                    <button @click="openEdit(order)" class="rounded-full p-1 hover:bg-muted text-muted-foreground" title="Edit"><Pencil class="h-3.5 w-3.5" /></button>
-                                    <button @click="cancelOrder(order.id)" :disabled="updatingId === order.id" class="rounded-full p-1 hover:bg-red-50 dark:hover:bg-red-950/30 text-muted-foreground hover:text-red-600 disabled:opacity-40" title="Cancel order"><X class="h-3.5 w-3.5" /></button>
+                                <span :class="portraitMode ? 'text-base font-black leading-tight' : 'text-2xl font-black'">{{ order.queue_number ? '#' + order.queue_number : '#' + order.id }}</span>
+                                <div class="flex items-center gap-1">
+                                    <span :class="['text-xs rounded-full px-1.5 py-0.5 font-medium', ageClass(order.created_at)]">{{ ageMinutes(order.created_at) }}m</span>
+                                    <button @click="openEdit(order)" class="rounded-full p-0.5 hover:bg-muted text-muted-foreground" title="Edit"><Pencil class="h-3 w-3" /></button>
+                                    <button @click="cancelOrder(order.id)" :disabled="updatingId === order.id" class="rounded-full p-0.5 hover:bg-red-50 dark:hover:bg-red-950/30 text-muted-foreground hover:text-red-600 disabled:opacity-40" title="Cancel"><X class="h-3 w-3" /></button>
                                 </div>
                             </div>
-                            <div class="flex flex-wrap items-center gap-1.5 mb-2">
-                                <span :class="['text-xs rounded-full px-2 py-0.5 font-semibold', paymentBadge(order.payment_status).cls]">{{ paymentBadge(order.payment_status).label }}</span>
-                                <span class="text-xs text-muted-foreground capitalize">{{ order.order_type.replace('_', ' ') }}<span v-if="order.table_number"> · {{ order.table_number }}</span></span>
-                                <span v-if="order.customer_name" class="text-xs font-semibold text-foreground">{{ order.customer_name }}</span>
-                                <span v-if="order.customer_contact" class="text-xs text-muted-foreground">📞 {{ order.customer_contact }}</span>
+                            <div class="flex flex-wrap items-center gap-1 mb-1">
+                                <span :class="['text-xs rounded-full px-1.5 py-0.5 font-semibold', paymentBadge(order.payment_status).cls]">{{ paymentBadge(order.payment_status).label }}</span>
+                                <span class="text-xs text-muted-foreground capitalize truncate">{{ order.order_type.replace('_',' ') }}<span v-if="order.table_number"> · {{ order.table_number }}</span></span>
                             </div>
-                            <ul class="text-sm space-y-0.5 mb-2">
-                                <li v-for="item in order.items" :key="item.id">
+                            <ul :class="['space-y-0.5 mb-1', portraitMode ? 'text-xs' : 'text-sm']">
+                                <li v-for="item in order.items" :key="item.id" class="truncate">
                                     <span class="font-bold">{{ item.quantity }}×</span> {{ item.product.name }}
                                 </li>
                             </ul>
-                            <div class="flex justify-between items-start mb-3">
-                                <div class="flex-1 mr-2 space-y-0.5">
-                                    <p v-if="order.notes" class="text-xs text-muted-foreground italic">{{ order.notes }}</p>
-                                    <p v-if="order.customer_address" class="text-xs text-orange-600 dark:text-orange-400 font-medium">📍 {{ order.customer_address }}</p>
-                                </div>
-                                <span class="text-sm font-bold text-primary shrink-0">{{ formatPrice(order.total_amount) }}</span>
+                            <div class="flex justify-between items-start mb-2">
+                                <p v-if="order.notes" class="text-xs text-muted-foreground italic truncate flex-1 mr-1">{{ order.notes }}</p>
+                                <span :class="['font-bold text-primary shrink-0', portraitMode ? 'text-xs' : 'text-sm']">{{ formatPrice(order.total_amount) }}</span>
                             </div>
                             <button @click="updateStatus(order.id, 'completed')" :disabled="updatingId === order.id"
-                                class="w-full rounded-lg bg-gray-700 py-2 text-sm font-bold text-white hover:bg-gray-800 disabled:opacity-50">
-                                <RefreshCw v-if="updatingId === order.id" class="inline h-3 w-3 animate-spin mr-1" />Mark Completed
+                                :class="['w-full rounded-lg bg-gray-700 font-bold text-white hover:bg-gray-800 disabled:opacity-50', portraitMode ? 'py-1 text-xs' : 'py-2 text-sm']">
+                                <RefreshCw v-if="updatingId === order.id" class="inline h-3 w-3 animate-spin mr-1" />{{ portraitMode ? 'Done' : 'Mark Completed' }}
                             </button>
                         </div>
                     </div>
