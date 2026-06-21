@@ -44,9 +44,10 @@ const products     = ref<Product[]>([])
 const productSearch = ref('')
 const showDropdown  = ref(false)
 
-const editNotes    = ref('')
-const editDiscount = ref(0)
-const editItems    = ref<EditItem[]>([])
+const editNotes      = ref('')
+const editDiscount   = ref(0)
+const editCreatedAt  = ref('')
+const editItems      = ref<EditItem[]>([])
 
 const backUrl = new URLSearchParams(window.location.search).get('back')
 const goBack = () => backUrl ? router.visit(backUrl) : window.history.back()
@@ -99,9 +100,10 @@ const startEdit = async () => {
             return
         }
     }
-    editNotes.value    = props.order.notes ?? ''
-    editDiscount.value = props.order.discount_amount ?? 0
-    editItems.value    = props.order.items.map(i => ({
+    editNotes.value     = props.order.notes ?? ''
+    editDiscount.value  = props.order.discount_amount ?? 0
+    editCreatedAt.value = props.order.created_at ? props.order.created_at.replace(' ', 'T').substring(0, 16) : ''
+    editItems.value     = props.order.items.map(i => ({
         product_id:   i.product_id,
         product_name: i.product_name,
         unit_price:   i.unit_price,
@@ -144,6 +146,7 @@ const saveEdit = async () => {
         await api.put('/api/v1/orders/' + props.order.id, {
             notes:           editNotes.value || null,
             discount_amount: editDiscount.value || 0,
+            created_at:      editCreatedAt.value || null,
             items:           editItems.value.map(i => ({ product_id: i.product_id, quantity: i.quantity })),
         })
         toast.success('Order updated')
@@ -308,6 +311,13 @@ const reprintReceipt = async () => {
                     <textarea v-model="editNotes" rows="2"
                         class="w-full rounded-lg border bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary"
                         placeholder="Order notes…" />
+                </div>
+
+                <!-- Date & Time -->
+                <div>
+                    <label class="text-xs font-semibold uppercase tracking-wider text-muted-foreground block mb-1">Date &amp; Time</label>
+                    <input v-model="editCreatedAt" type="datetime-local"
+                        class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
                 </div>
 
                 <!-- Discount -->
