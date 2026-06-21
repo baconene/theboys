@@ -647,7 +647,7 @@ const openEditFt = (tx: FtTransaction) => {
         amount: String(tx.amount),
         description: tx.description,
         notes: tx.notes ?? '',
-        transacted_at: tx.transacted_at.slice(0, 10),
+        transacted_at: tx.transacted_at ? tx.transacted_at.replace(' ', 'T').substring(0, 16) : '',
     }
     showEntryForm.value = false
 }
@@ -1440,8 +1440,9 @@ onMounted(async () => {
                             class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
                     </div>
                     <div>
-                        <label class="text-xs font-medium text-muted-foreground block mb-1">Date (optional)</label>
-                        <input v-model="entryForm.transacted_at" type="date"
+                        <label class="text-xs font-medium text-muted-foreground block mb-1">Date &amp; Time (optional)</label>
+                        <input v-model="entryForm.transacted_at" type="datetime-local"
+                            min="2000-01-01T00:00" max="2099-12-31T23:59"
                             class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
                     </div>
                     <div class="sm:col-span-3">
@@ -1486,8 +1487,9 @@ onMounted(async () => {
                             class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
                     </div>
                     <div>
-                        <label class="text-xs font-medium text-muted-foreground block mb-1">Date</label>
-                        <input v-model="ftEditForm.transacted_at" type="date"
+                        <label class="text-xs font-medium text-muted-foreground block mb-1">Date &amp; Time</label>
+                        <input v-model="ftEditForm.transacted_at" type="datetime-local"
+                            min="2000-01-01T00:00" max="2099-12-31T23:59"
                             class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
                     </div>
                     <div class="sm:col-span-3">
