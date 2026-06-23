@@ -81,19 +81,21 @@ class DistributionController extends Controller
             $snapshot->load('details');
 
             foreach ($snapshot->details as $detail) {
+                // Only disburse to shareholders — company retained earnings stay in the business.
+                if ($detail->recipient_type !== 'shareholder') continue;
                 if ($detail->amount <= 0) continue;
 
                 \App\Models\FinancialTransaction::create([
-                    'type'                    => 'payout_share',
-                    'amount'                  => $detail->amount,
-                    'description'             => 'Profit Distribution Payout — ' . $detail->recipient_name
+                    'type'                     => 'payout_share',
+                    'amount'                   => $detail->amount,
+                    'description'              => 'Profit Distribution Payout — ' . $detail->recipient_name
                         . ' (' . $snapshot->period_start->toDateString() . ' to ' . $snapshot->period_end->toDateString() . ')',
-                    'payment_tender_id'       => $tenderId,
-                    'distribution_snapshot_id'=> $snapshot->id,
-                    'shareholder_id'          => $detail->shareholder_id,
-                    'user_id'                 => auth()->id(),
-                    'notes'                   => $notes,
-                    'transacted_at'           => $now,
+                    'payment_tender_id'        => $tenderId,
+                    'distribution_snapshot_id' => $snapshot->id,
+                    'shareholder_id'           => $detail->shareholder_id,
+                    'user_id'                  => auth()->id(),
+                    'notes'                    => $notes,
+                    'transacted_at'            => $now,
                 ]);
             }
 
