@@ -4,46 +4,39 @@ import { Head } from '@inertiajs/vue3'
 import { toast } from 'vue-sonner'
 import api from '@/utils/api'
 import {
-    PieChart, Users, Percent, History, TrendingUp, RefreshCw, Plus, Trash2, Pencil,
+    PieChart, Users, History, TrendingUp, RefreshCw, Plus, Trash2, Pencil,
     Download, Save, X, HelpCircle, Gift, Package, Banknote, CheckCircle2,
 } from 'lucide-vue-next'
 
 defineOptions({ layout: { breadcrumbs: [{ title: 'Dashboard', href: '/dashboard' }, { title: 'Profit Sharing', href: '/distribution' }] } })
 
-const props = defineProps<{ categories: { id: number; name: string }[]; products: { id: number; name: string; category_id: number }[] }>()
+const props = defineProps<{
+    categories: { id: number; name: string }[]
+    products: { id: number; name: string; category_id: number }[]
+    users: { id: number; name: string }[]
+}>()
 
 // ── Shared filters ────────────────────────────────────────────────────────
 const today = new Date().toISOString().split('T')[0]
 const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0]
-const basis = ref<'sales' | 'profit' | 'hybrid'>('sales')
+const basis = ref<'sales' | 'profit'>('sales')
 const startDate = ref(monthStart)
 const endDate = ref(today)
 const categoryId = ref<number | ''>('')
 const productId = ref<number | ''>('')
-const shareholderId = ref<number | ''>('')
 
-const subTab = ref<'distribution' | 'shareholders' | 'royalties' | 'trends' | 'history' | 'help'>('distribution')
+const subTab = ref<'distribution' | 'shareholders' | 'incentives' | 'trends' | 'history' | 'help'>('distribution')
 
-const fmt = (v: number) => '₱' + (v ?? 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+const fmt = (v: number | null | undefined) => '₱' + (v ?? 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+const pct = (v: number | null | undefined) => ((v ?? 0).toFixed(2)) + '%'
 
-// ── Distribution preview ────────────────────────────────────────────────────────
+// ── Distribution preview ─────────────────────────────────────────────────────
 const result = ref<any>(null)
 const loading = ref(false)
-
-// In hybrid mode only show royalty recipients that are NOT linked to a shareholder
-// (linked ones already appear as the Royalties column inside the member table)
-const visibleRoyaltyRecipients = computed(() => {
-    if (!result.value?.royalty?.by_recipient) return []
-    if (result.value.basis === 'hybrid') {
-        return result.value.royalty.by_recipient.filter((r: any) => !r.shareholder_id)
-    }
-    return result.value.royalty.by_recipient
-})
 
 const params = () => ({
     basis: basis.value, start_date: startDate.value, end_date: endDate.value,
     category_id: categoryId.value || undefined, product_id: productId.value || undefined,
-    shareholder_id: shareholderId.value || undefined,
 })
 
 const loadPreview = async () => {
@@ -58,19 +51,22 @@ const loadPreview = async () => {
     }
 }
 
-const setMonth = () => { startDate.value = monthStart; endDate.value = today; loadPreview() }
+const setMonth   = () => { startDate.value = monthStart; endDate.value = today; loadPreview() }
 const setQuarter = () => {
     const q = Math.floor(new Date().getMonth() / 3)
     startDate.value = new Date(new Date().getFullYear(), q * 3, 1).toISOString().split('T')[0]
     endDate.value = today; loadPreview()
 }
 const setYear = () => { startDate.value = new Date(new Date().getFullYear(), 0, 1).toISOString().split('T')[0]; endDate.value = today; loadPreview() }
-
-const exportCsv = () => {
-    const qs = new URLSearchParams(params() as any).toString()
-    window.open(`/api/v1/distribution/export?${qs}`, '_blank')
+const setWeek = () => {
+    const d = new Date()
+    const day = d.getDay() || 7
+    d.setDate(d.getDate() - day + 1)
+    startDate.value = d.toISOString().split('T')[0]
+    endDate.value = today; loadPreview()
 }
 
+const exportCsv   = () => { const qs = new URLSearchParams(params() as any).toString(); window.open(`/api/v1/distribution/export?${qs}`, '_blank') }
 const saveSnapshot = async () => {
     try {
         await api.post('/api/v1/distribution/snapshots', params())
@@ -81,7 +77,21 @@ const saveSnapshot = async () => {
     }
 }
 
-// ── Pie chart ───────────────────────────────────────────────────────────────────
+// ── Combined summary (dividend + incentive) ──────────────────────────────────
+const combinedSummary = computed(() => {
+    if (!result.value) return []
+    const map: Record<number, number> = {}
+    for (const s of result.value.incentive?.by_shareholder ?? []) {
+        map[s.shareholder_id] = s.incentive_amount ?? 0
+    }
+    return (result.value.members ?? []).map((m: any) => ({
+        ...m,
+        incentive_amount: map[m.shareholder_id] ?? 0,
+        total_amount: Math.round(((m.amount ?? 0) + (map[m.shareholder_id] ?? 0)) * 100) / 100,
+    }))
+})
+
+// ── Pie chart — Ownership Dividend ───────────────────────────────────────────
 const pieSeries = computed(() => (result.value?.chart ?? []).map((c: any) => c.value))
 const pieOptions = computed(() => ({
     chart: { type: 'pie' },
@@ -92,7 +102,46 @@ const pieOptions = computed(() => ({
     tooltip: { y: { formatter: (val: number) => '₱' + val.toLocaleString('en-PH', { minimumFractionDigits: 2 }) } },
 }))
 
-// ── Shareholders CRUD ───────────────────────────────────────────────────────────
+// ── Pie chart — Product Incentive Distribution ────────────────────────────────
+const incentivePieData = computed(() => {
+    const inc = result.value?.incentive
+    if (!inc || (!(inc.by_shareholder?.length) && !(inc.company_retained > 0))) return null
+    const slices = [
+        ...(inc.by_shareholder ?? []).map((s: any) => ({ label: s.name, value: s.incentive_amount })),
+        ...(inc.company_retained > 0 ? [{ label: 'Company (unowned)', value: inc.company_retained }] : []),
+    ]
+    return slices
+})
+const incentivePieSeries  = computed(() => incentivePieData.value?.map(s => s.value) ?? [])
+const incentivePieOptions = computed(() => ({
+    chart: { type: 'pie' },
+    labels: incentivePieData.value?.map(s => s.label) ?? [],
+    legend: { position: 'bottom' },
+    colors: ['#f59e0b', '#f97316', '#eab308', '#84cc16', '#10b981', '#6b7280', '#8b5cf6'],
+    dataLabels: { formatter: (val: number) => val.toFixed(1) + '%' },
+    tooltip: { y: { formatter: (val: number) => '₱' + val.toLocaleString('en-PH', { minimumFractionDigits: 2 }) } },
+}))
+
+// ── Pie chart — Combined (Dividend + Incentive) ───────────────────────────────
+const combinedPieData = computed(() => {
+    if (!result.value || !combinedSummary.value.length) return null
+    const companyTotal = Math.round(((result.value.company_amount ?? 0) + (result.value.incentive?.company_retained ?? 0)) * 100) / 100
+    return [
+        ...combinedSummary.value.map((m: any) => ({ label: m.name, value: m.total_amount })),
+        ...(companyTotal > 0 ? [{ label: 'Company', value: companyTotal }] : []),
+    ]
+})
+const combinedPieSeries  = computed(() => combinedPieData.value?.map(s => s.value) ?? [])
+const combinedPieOptions = computed(() => ({
+    chart: { type: 'pie' },
+    labels: combinedPieData.value?.map(s => s.label) ?? [],
+    legend: { position: 'bottom' },
+    colors: ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#14b8a6', '#10b981', '#6b7280'],
+    dataLabels: { formatter: (val: number) => val.toFixed(1) + '%' },
+    tooltip: { y: { formatter: (val: number) => '₱' + val.toLocaleString('en-PH', { minimumFractionDigits: 2 }) } },
+}))
+
+// ── Shareholders ──────────────────────────────────────────────────────────────
 const shareholders = ref<any[]>([])
 const totalOwnership = ref(0)
 const companyPct = ref(100)
@@ -105,7 +154,7 @@ const loadShareholders = async () => {
     totalOwnership.value = res.data.total_ownership
     companyPct.value = res.data.company_percentage
 }
-const editSh = (s: any) => { shForm.value = { ...s } }
+const editSh     = (s: any) => { shForm.value = { ...s } }
 const resetShForm = () => { shForm.value = { id: null, name: '', email: '', ownership_percentage: '', status: 'active', notes: '' } }
 const saveSh = async () => {
     shSaving.value = true
@@ -124,57 +173,123 @@ const deleteSh = async (s: any) => {
     await api.delete(`/api/v1/shareholders/${s.id}`); toast.success('Removed'); await loadShareholders()
 }
 
-// ── Royalty rules CRUD ──────────────────────────────────────────────────────────
-const rules = ref<any[]>([])
-const rForm = ref<any>({ id: null, scope: 'product', product_id: '', category_id: '', recipient_name: '', shareholder_id: '', royalty_percentage: '', effective_date: today, expiration_date: '', is_active: true })
-const rSaving = ref(false)
+// ── Incentive rules (pool rate config) ───────────────────────────────────────
+const incentiveRules = ref<any[]>([])
+const iForm = ref<any>({ id: null, name: '', pool_type: 'gross_sales_pct', rate: '', distribution_method: 'by_sales', is_active: true, effective_date: today, expiration_date: '', notes: '' })
+const iSaving = ref(false)
 
-const loadRules = async () => { rules.value = (await api.get('/api/v1/royalty-rules')).data }
-const editRule = (r: any) => { rForm.value = { ...r, product_id: r.product_id ?? '', category_id: r.category_id ?? '', shareholder_id: r.shareholder_id ?? '', expiration_date: r.expiration_date ?? '' } }
-const resetRForm = () => { rForm.value = { id: null, scope: 'product', product_id: '', category_id: '', recipient_name: '', shareholder_id: '', royalty_percentage: '', effective_date: today, expiration_date: '', is_active: true } }
-const saveRule = async () => {
-    rSaving.value = true
+const loadIncentiveRules = async () => { incentiveRules.value = (await api.get('/api/v1/incentive-rules')).data }
+const editIncentive = (r: any) => { iForm.value = { ...r, expiration_date: r.expiration_date ?? '' } }
+const resetIForm = () => { iForm.value = { id: null, name: '', pool_type: 'gross_sales_pct', rate: '', distribution_method: 'by_sales', is_active: true, effective_date: today, expiration_date: '', notes: '' } }
+const saveIncentive = async () => {
+    iSaving.value = true
     try {
-        const payload = { ...rForm.value, royalty_percentage: parseFloat(rForm.value.royalty_percentage) || 0, product_id: rForm.value.product_id || null, category_id: rForm.value.category_id || null, shareholder_id: rForm.value.shareholder_id || null, expiration_date: rForm.value.expiration_date || null }
-        if (rForm.value.id) await api.put(`/api/v1/royalty-rules/${rForm.value.id}`, payload)
-        else await api.post('/api/v1/royalty-rules', payload)
-        toast.success('Royalty rule saved'); resetRForm(); await loadRules()
+        const payload = { ...iForm.value, rate: parseFloat(iForm.value.rate) || 0, expiration_date: iForm.value.expiration_date || null }
+        if (iForm.value.id) await api.put(`/api/v1/incentive-rules/${iForm.value.id}`, payload)
+        else await api.post('/api/v1/incentive-rules', payload)
+        toast.success('Incentive rule saved'); resetIForm(); await loadIncentiveRules()
     } catch (err: any) {
         toast.error(Object.values(err.response?.data?.errors ?? {}).flat().join(' ') || err.response?.data?.message || 'Failed to save')
-    } finally { rSaving.value = false }
+    } finally { iSaving.value = false }
 }
-const deleteRule = async (r: any) => {
-    if (!confirm(`Delete royalty rule for ${r.recipient_name}?`)) return
-    await api.delete(`/api/v1/royalty-rules/${r.id}`); toast.success('Deleted'); await loadRules()
+const deleteIncentive = async (r: any) => {
+    if (!confirm(`Delete incentive rule "${r.name}"?`)) return
+    await api.delete(`/api/v1/incentive-rules/${r.id}`); toast.success('Deleted'); await loadIncentiveRules()
 }
 
-// ── Trends + royalty analytics ──────────────────────────────────────────────
+const poolTypeLabel = (t: string) => ({
+    gross_sales_pct: '% of Gross Sales', gross_profit_pct: '% of Gross Profit',
+    net_profit_pct: '% of Net Profit', fixed_amount: 'Fixed ₱ Amount',
+}[t] ?? t)
+
+const poolTypeUnit = (t: string) => t === 'fixed_amount' ? '₱' : '%'
+
+// ── Product Ownership ─────────────────────────────────────────────────────────
+const productOwnerships = ref<any[]>([])
+const productFilter = ref('')
+const editProductId = ref<number | null>(null)
+const editProductName = ref('')
+const editOwnerRows = ref<{ shareholder_id: number | ''; ownership_percentage: number | '' }[]>([])
+const productOwnerSaving = ref(false)
+
+const filteredProducts = computed(() => {
+    const q = productFilter.value.toLowerCase()
+    return q ? productOwnerships.value.filter(p => p.product_name.toLowerCase().includes(q)) : productOwnerships.value
+})
+
+const ownerTotalPct = computed(() =>
+    editOwnerRows.value.reduce((s, r) => s + (parseFloat(r.ownership_percentage as any) || 0), 0)
+)
+
+const loadProductOwnerships = async () => {
+    productOwnerships.value = (await api.get('/api/v1/product-ownerships')).data
+}
+
+const startEditProduct = (p: any) => {
+    editProductId.value = p.product_id
+    editProductName.value = p.product_name
+    editOwnerRows.value = p.owners.length
+        ? p.owners.map((o: any) => ({ shareholder_id: o.shareholder_id, ownership_percentage: o.ownership_percentage }))
+        : [{ shareholder_id: '', ownership_percentage: '' }]
+}
+
+const addOwnerRow = () => editOwnerRows.value.push({ shareholder_id: '', ownership_percentage: '' })
+const removeOwnerRow = (i: number) => editOwnerRows.value.splice(i, 1)
+
+const saveProductOwnership = async () => {
+    if (editOwnerRows.value.length > 0 && Math.abs(ownerTotalPct.value - 100) > 0.01) {
+        toast.error('Ownership percentages must total 100%')
+        return
+    }
+    productOwnerSaving.value = true
+    try {
+        const owners = editOwnerRows.value
+            .filter(r => r.shareholder_id !== '')
+            .map(r => ({ shareholder_id: r.shareholder_id, ownership_percentage: parseFloat(r.ownership_percentage as any) || 0 }))
+        await api.put(`/api/v1/product-ownerships/${editProductId.value}`, { owners })
+        toast.success('Product ownership saved')
+        editProductId.value = null
+        await loadProductOwnerships()
+    } catch (err: any) {
+        toast.error(err.response?.data?.message ?? 'Failed to save')
+    } finally { productOwnerSaving.value = false }
+}
+
+const clearProductOwnership = async (productId: number, productName: string) => {
+    if (!confirm(`Remove all owners from "${productName}"? It will become company-owned.`)) return
+    try {
+        await api.delete(`/api/v1/product-ownerships/${productId}`)
+        toast.success('Owners cleared')
+        if (editProductId.value === productId) editProductId.value = null
+        await loadProductOwnerships()
+    } catch (err: any) {
+        toast.error(err.response?.data?.message ?? 'Failed to clear owners')
+    }
+}
+
+// ── Trends ────────────────────────────────────────────────────────────────────
 const trend = ref<any[]>([])
-const royaltyAnalytics = ref<any>(null)
 
 const loadTrends = async () => {
     const yearStart = new Date(new Date().getFullYear(), 0, 1).toISOString().split('T')[0]
-    const [t, r] = await Promise.all([
-        api.get('/api/v1/distribution/trend', { params: { basis: basis.value, start_date: yearStart, end_date: today } }),
-        api.get('/api/v1/distribution/royalty-analytics', { params: params() }),
-    ])
-    trend.value = t.data; royaltyAnalytics.value = r.data
+    const res = await api.get('/api/v1/distribution/trend', { params: { basis: basis.value, start_date: yearStart, end_date: today } })
+    trend.value = res.data
 }
 const trendSeries = computed(() => ([
-    { name: 'Members', data: trend.value.map(t => t.members) },
-    { name: 'Company', data: trend.value.map(t => t.company) },
-    { name: 'Royalties', data: trend.value.map(t => t.royalty) },
+    { name: 'Dividend', data: trend.value.map((t: any) => t.members) },
+    { name: 'Incentive', data: trend.value.map((t: any) => t.incentive ?? 0) },
+    { name: 'Company', data: trend.value.map((t: any) => t.company) },
 ]))
 const trendOptions = computed(() => ({
     chart: { type: 'line', toolbar: { show: false } },
     stroke: { width: 2, curve: 'smooth' },
-    xaxis: { categories: trend.value.map(t => t.month) },
-    colors: ['#3b82f6', '#10b981', '#f59e0b'],
+    xaxis: { categories: trend.value.map((t: any) => t.month) },
+    colors: ['#3b82f6', '#f59e0b', '#10b981'],
     yaxis: { labels: { formatter: (v: number) => '₱' + (v / 1000).toFixed(0) + 'K' } },
     legend: { position: 'top' },
 }))
 
-// ── Snapshots history ────────────────────────────────────────────────────────
+// ── Snapshots history ─────────────────────────────────────────────────────────
 const snapshots = ref<any[]>([])
 const loadSnapshots = async () => { snapshots.value = (await api.get('/api/v1/distribution/snapshots')).data }
 
@@ -216,7 +331,7 @@ const submitPayout = async () => {
 // ── Tab activation ────────────────────────────────────────────────────────────
 watch(subTab, (t) => {
     if (t === 'shareholders') loadShareholders()
-    else if (t === 'royalties') { loadRules(); loadShareholders() }
+    else if (t === 'incentives') { loadIncentiveRules(); loadProductOwnerships(); loadShareholders() }
     else if (t === 'trends') loadTrends()
     else if (t === 'history') loadSnapshots()
 })
@@ -226,10 +341,10 @@ onMounted(loadPreview)
 const tabs = [
     { key: 'distribution', label: 'Distribution', icon: PieChart },
     { key: 'shareholders', label: 'Shareholders', icon: Users },
-    { key: 'royalties', label: 'Royalties', icon: Percent },
-    { key: 'trends', label: 'Trends', icon: TrendingUp },
-    { key: 'history', label: 'History', icon: History },
-    { key: 'help', label: 'Help', icon: HelpCircle },
+    { key: 'incentives',   label: 'Incentives',   icon: Gift },
+    { key: 'trends',       label: 'Trends',        icon: TrendingUp },
+    { key: 'history',      label: 'History',       icon: History },
+    { key: 'help',         label: 'Help',          icon: HelpCircle },
 ] as const
 </script>
 
@@ -242,8 +357,7 @@ const tabs = [
                 <PieChart class="h-6 w-6 text-primary" />
                 <h1 class="text-xl font-black">Profit Distribution</h1>
             </div>
-            <button @click="subTab = 'help'"
-                class="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium text-muted-foreground hover:bg-muted transition">
+            <button @click="subTab = 'help'" class="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium text-muted-foreground hover:bg-muted transition">
                 <HelpCircle class="h-4 w-4" /> How it works
             </button>
         </div>
@@ -261,25 +375,27 @@ const tabs = [
         <template v-if="subTab === 'distribution'">
             <!-- Filters -->
             <div class="rounded-xl border bg-card shadow-sm p-4">
-                <div class="flex flex-wrap items-end gap-3">
-                    <div>
-                        <label class="text-xs font-medium text-muted-foreground block mb-1">Basis</label>
-                        <div class="flex rounded-lg border overflow-hidden">
-                            <button @click="basis = 'sales'; loadPreview()" :class="['px-3 py-2 text-sm font-semibold', basis === 'sales' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted']">Sales</button>
-                            <button @click="basis = 'profit'; loadPreview()" :class="['px-3 py-2 text-sm font-semibold', basis === 'profit' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted']">Profit</button>
-                            <button @click="basis = 'hybrid'; loadPreview()" :class="['px-3 py-2 text-sm font-semibold', basis === 'hybrid' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted']">Hybrid</button>
+                <div class="space-y-3">
+                    <div class="flex flex-wrap items-end gap-3">
+                        <div>
+                            <label class="text-xs font-medium text-muted-foreground block mb-1">Basis</label>
+                            <div class="flex rounded-lg border overflow-hidden">
+                                <button @click="basis = 'sales'; loadPreview()" :class="['px-3 py-2 text-sm font-semibold', basis === 'sales' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted']">Sales</button>
+                                <button @click="basis = 'profit'; loadPreview()" :class="['px-3 py-2 text-sm font-semibold', basis === 'profit' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted']">Profit</button>
+                            </div>
                         </div>
+                        <div><label class="text-xs font-medium text-muted-foreground block mb-1">From</label><input v-model="startDate" type="date" class="rounded-lg border bg-background px-3 py-2 text-sm" /></div>
+                        <div><label class="text-xs font-medium text-muted-foreground block mb-1">To</label><input v-model="endDate" type="date" class="rounded-lg border bg-background px-3 py-2 text-sm" /></div>
+                        <div class="w-full sm:w-auto"><label class="text-xs font-medium text-muted-foreground block mb-1">Category</label>
+                            <select v-model="categoryId" class="w-full sm:w-auto rounded-lg border bg-background px-3 py-2 text-sm"><option value="">All</option><option v-for="c in categories" :key="c.id" :value="c.id">{{ c.name }}</option></select></div>
+                        <div class="w-full sm:w-auto"><label class="text-xs font-medium text-muted-foreground block mb-1">Product</label>
+                            <select v-model="productId" class="w-full sm:w-auto rounded-lg border bg-background px-3 py-2 text-sm"><option value="">All</option><option v-for="p in products" :key="p.id" :value="p.id">{{ p.name }}</option></select></div>
+                        <button @click="loadPreview" :disabled="loading" class="w-full sm:w-auto rounded-lg bg-primary px-5 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 flex items-center justify-center gap-1.5">
+                            <RefreshCw v-if="loading" class="h-3.5 w-3.5 animate-spin" /><PieChart v-else class="h-3.5 w-3.5" /> Compute
+                        </button>
                     </div>
-                    <div><label class="text-xs font-medium text-muted-foreground block mb-1">From</label><input v-model="startDate" type="date" class="rounded-lg border bg-background px-3 py-2 text-sm" /></div>
-                    <div><label class="text-xs font-medium text-muted-foreground block mb-1">To</label><input v-model="endDate" type="date" class="rounded-lg border bg-background px-3 py-2 text-sm" /></div>
-                    <div><label class="text-xs font-medium text-muted-foreground block mb-1">Category</label>
-                        <select v-model="categoryId" class="rounded-lg border bg-background px-3 py-2 text-sm"><option value="">All</option><option v-for="c in categories" :key="c.id" :value="c.id">{{ c.name }}</option></select></div>
-                    <div><label class="text-xs font-medium text-muted-foreground block mb-1">Product</label>
-                        <select v-model="productId" class="rounded-lg border bg-background px-3 py-2 text-sm"><option value="">All</option><option v-for="p in products" :key="p.id" :value="p.id">{{ p.name }}</option></select></div>
-                    <button @click="loadPreview" :disabled="loading" class="rounded-lg bg-primary px-5 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 flex items-center gap-1.5">
-                        <RefreshCw v-if="loading" class="h-3.5 w-3.5 animate-spin" /><PieChart v-else class="h-3.5 w-3.5" /> Compute
-                    </button>
-                    <div class="flex items-center gap-1 ml-auto">
+                    <div class="flex flex-wrap items-center gap-2">
+                        <button @click="setWeek" class="rounded-lg border px-2.5 py-1.5 text-xs font-medium hover:bg-muted">This Week</button>
                         <button @click="setMonth" class="rounded-lg border px-2.5 py-1.5 text-xs font-medium hover:bg-muted">Month</button>
                         <button @click="setQuarter" class="rounded-lg border px-2.5 py-1.5 text-xs font-medium hover:bg-muted">Quarter</button>
                         <button @click="setYear" class="rounded-lg border px-2.5 py-1.5 text-xs font-medium hover:bg-muted">Year</button>
@@ -290,11 +406,10 @@ const tabs = [
             </div>
 
             <template v-if="result">
-                <!-- Financial Summary as-of card -->
+                <!-- Financial Summary -->
                 <div v-if="result.financial_summary" class="rounded-xl border bg-card shadow-sm p-4">
                     <div class="flex items-center justify-between mb-3">
-                        <p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Financial Summary — as of {{ result.financial_summary.period_end }}</p>
-                        <span v-if="result.basis === 'hybrid'" class="rounded-full bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-400 px-2.5 py-0.5 text-xs font-semibold">Hybrid: Sales + Profit</span>
+                        <p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Financial Summary — {{ result.financial_summary.period_end }}</p>
                     </div>
                     <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
                         <div class="space-y-0.5">
@@ -327,84 +442,204 @@ const tabs = [
                             </p>
                             <p class="text-base font-bold" :class="result.financial_summary.net_profit >= 0 ? 'text-emerald-600' : 'text-red-500'">{{ fmt(result.financial_summary.net_profit) }}</p>
                         </div>
-                        <div v-if="result.basis === 'hybrid'" class="space-y-0.5 border-l pl-3">
-                            <p class="text-[10px] uppercase tracking-wide text-muted-foreground">Profit Base</p>
-                            <p class="text-base font-bold text-violet-600">{{ fmt(result.financial_summary.net_profit) }}</p>
-                        </div>
-                        <div v-else class="space-y-0.5 border-l pl-3">
+                        <div class="space-y-0.5 border-l pl-3">
                             <p class="text-[10px] uppercase tracking-wide text-muted-foreground">{{ result.basis === 'profit' ? 'Profit Margin' : 'Sales Basis' }}</p>
                             <p class="text-base font-bold text-primary">{{ result.basis === 'profit' ? (result.financial_summary.gross_sales > 0 ? ((result.financial_summary.net_profit / result.financial_summary.gross_sales) * 100).toFixed(1) + '%' : '—') : fmt(result.financial_summary.sales_base) }}</p>
                         </div>
                     </div>
-                    <!-- Hybrid breakdown note -->
-                    <div v-if="result.basis === 'hybrid'" class="mt-3 rounded-lg bg-violet-50 dark:bg-violet-950/20 border border-violet-200 dark:border-violet-800 p-2.5 text-xs text-violet-800 dark:text-violet-300">
-                        Hybrid adds each member's <strong>profit share</strong> (ownership % × distributable profit) to their <strong>directly linked royalties</strong> (from royalty rules with their account linked). Members with no linked royalty rules receive only their profit share.
-                    </div>
                 </div>
 
                 <!-- Flow KPIs -->
-                <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                <div class="grid grid-cols-2 lg:grid-cols-3 gap-3">
                     <div class="rounded-xl border bg-card p-4 shadow-sm"><p class="text-[10px] uppercase tracking-wide text-muted-foreground">{{ result.base_label }}</p><p class="text-xl font-black mt-1">{{ fmt(result.base_amount) }}</p></div>
-                    <div class="rounded-xl border bg-card p-4 shadow-sm"><p class="text-[10px] uppercase tracking-wide text-muted-foreground">Royalties</p><p class="text-xl font-black mt-1 text-amber-600">−{{ fmt(result.royalty.total) }}</p></div>
                     <div class="rounded-xl border bg-card p-4 shadow-sm"><p class="text-[10px] uppercase tracking-wide text-muted-foreground">Distributable</p><p class="text-xl font-black mt-1 text-primary">{{ fmt(result.distributable) }}</p></div>
-                    <div class="rounded-xl border bg-card p-4 shadow-sm"><p class="text-[10px] uppercase tracking-wide text-muted-foreground">Company ({{ result.company_percentage }}%)</p><p class="text-xl font-black mt-1 text-emerald-600">{{ fmt(result.company_amount) }}</p></div>
+                    <div class="rounded-xl border bg-card p-4 shadow-sm col-span-2 lg:col-span-1"><p class="text-[10px] uppercase tracking-wide text-muted-foreground">Company ({{ result.company_percentage }}%)</p><p class="text-xl font-black mt-1 text-emerald-600">{{ fmt(result.company_amount) }}</p></div>
                 </div>
 
+                <!-- Two-column: Dividend + Incentive -->
                 <div class="grid lg:grid-cols-2 gap-4">
-                    <!-- Pie -->
-                    <div class="rounded-xl border bg-card shadow-sm p-4">
-                        <h3 class="font-bold text-sm mb-2">Distribution Breakdown</h3>
-                        <apexchart v-if="pieSeries.length" type="pie" height="300" :options="pieOptions" :series="pieSeries" />
-                        <p v-else class="text-sm text-muted-foreground text-center py-10">No distributable amount in range.</p>
-                    </div>
-                    <!-- Member table -->
+                    <!-- ── Ownership Dividend ── -->
                     <div class="rounded-xl border bg-card shadow-sm overflow-hidden">
-                        <div class="p-4 border-b flex items-center gap-2">
-                            <h3 class="font-bold text-sm">Member Shares</h3>
-                            <span v-if="result.basis === 'hybrid'" class="rounded-full bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-400 px-2 py-0.5 text-xs font-semibold">Profit Share + Royalties</span>
+                        <div class="p-4 border-b">
+                            <div class="flex items-center gap-2 mb-0.5">
+                                <h3 class="font-bold text-sm">Ownership Dividend</h3>
+                                <span class="rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-2 py-0.5 text-xs font-semibold">{{ result.members_percentage }}% of Distributable</span>
+                            </div>
+                            <p class="text-xs text-muted-foreground">Based on ownership %. Company keeps its {{ result.company_percentage }}%.</p>
                         </div>
-                        <table class="w-full text-sm">
-                            <thead class="bg-muted/50 text-muted-foreground text-xs uppercase">
-                                <tr>
-                                    <th class="px-4 py-2 text-left">Member</th>
-                                    <th class="px-4 py-2 text-right">%</th>
-                                    <th v-if="result.basis === 'hybrid'" class="px-4 py-2 text-right">Profit Share</th>
-                                    <th v-if="result.basis === 'hybrid'" class="px-4 py-2 text-right text-amber-600">Royalties</th>
-                                    <th class="px-4 py-2 text-right">Total</th>
-                                </tr>
-                            </thead>
+                        <!-- Pie -->
+                        <div class="p-4 border-b">
+                            <apexchart v-if="pieSeries.length" type="pie" height="240" :options="pieOptions" :series="pieSeries" />
+                            <p v-else class="text-sm text-muted-foreground text-center py-8">No distributable amount.</p>
+                        </div>
+                        <!-- Mobile cards -->
+                        <div class="sm:hidden divide-y">
+                            <div v-for="m in result.members" :key="m.shareholder_id" class="p-3 space-y-1.5">
+                                <div class="flex justify-between"><span class="font-semibold text-sm">{{ m.name }}</span><span class="text-xs text-muted-foreground">{{ m.percentage }}%</span></div>
+                                <div class="flex justify-between font-bold text-sm"><span>Dividend</span><span class="text-blue-600">{{ fmt(m.amount) }}</span></div>
+                            </div>
+                            <div class="p-3 bg-muted/30 flex justify-between font-bold text-sm"><span>Members total</span><span>{{ fmt(result.members_total) }}</span></div>
+                            <div class="p-3 bg-emerald-50 dark:bg-emerald-950/20 flex justify-between font-bold text-sm text-emerald-700 dark:text-emerald-400"><span>Company ({{ result.company_percentage }}%)</span><span>{{ fmt(result.company_amount) }}</span></div>
+                        </div>
+                        <!-- Desktop table -->
+                        <table class="hidden sm:table w-full text-sm">
+                            <thead class="bg-muted/50 text-muted-foreground text-xs uppercase"><tr>
+                                <th class="px-4 py-2 text-left">Member</th><th class="px-4 py-2 text-right">Ownership</th>
+                                <th class="px-4 py-2 text-right">Dividend</th>
+                            </tr></thead>
                             <tbody class="divide-y">
                                 <tr v-for="m in result.members" :key="m.shareholder_id" class="hover:bg-muted/20">
                                     <td class="px-4 py-2 font-medium">{{ m.name }}</td>
                                     <td class="px-4 py-2 text-right">{{ m.percentage }}%</td>
-                                    <td v-if="result.basis === 'hybrid'" class="px-4 py-2 text-right text-muted-foreground">{{ fmt(m.profit_share) }}</td>
-                                    <td v-if="result.basis === 'hybrid'" class="px-4 py-2 text-right text-amber-600">{{ m.royalty_amount > 0 ? fmt(m.royalty_amount) : '—' }}</td>
-                                    <td class="px-4 py-2 text-right font-bold">{{ fmt(m.amount) }}</td>
+                                    <td class="px-4 py-2 text-right font-bold text-blue-600">{{ fmt(m.amount) }}</td>
                                 </tr>
-                                <tr class="bg-muted/30 font-bold">
-                                    <td class="px-4 py-2">Members total</td>
-                                    <td class="px-4 py-2 text-right">{{ result.members_percentage }}%</td>
-                                    <td v-if="result.basis === 'hybrid'" colspan="2"></td>
-                                    <td class="px-4 py-2 text-right">{{ fmt(result.members_total) }}</td>
-                                </tr>
-                                <tr class="bg-emerald-50 dark:bg-emerald-950/20 font-bold text-emerald-700 dark:text-emerald-400">
-                                    <td class="px-4 py-2">Company retained</td>
-                                    <td class="px-4 py-2 text-right">{{ result.company_percentage }}%</td>
-                                    <td v-if="result.basis === 'hybrid'" colspan="2"></td>
-                                    <td class="px-4 py-2 text-right">{{ fmt(result.company_amount) }}</td>
-                                </tr>
+                                <tr class="bg-muted/30 font-bold"><td class="px-4 py-2">Members total</td><td class="px-4 py-2 text-right">{{ result.members_percentage }}%</td><td class="px-4 py-2 text-right">{{ fmt(result.members_total) }}</td></tr>
+                                <tr class="bg-emerald-50 dark:bg-emerald-950/20 font-bold text-emerald-700 dark:text-emerald-400"><td class="px-4 py-2">Company retained</td><td class="px-4 py-2 text-right">{{ result.company_percentage }}%</td><td class="px-4 py-2 text-right">{{ fmt(result.company_amount) }}</td></tr>
                             </tbody>
                         </table>
                     </div>
+
+                    <!-- ── Product Ownership Incentive ── -->
+                    <div class="rounded-xl border bg-card shadow-sm overflow-hidden">
+                        <div class="p-4 border-b">
+                            <div class="flex items-center justify-between mb-0.5">
+                                <div class="flex items-center gap-2">
+                                    <h3 class="font-bold text-sm">Product Ownership Incentive</h3>
+                                    <span class="rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-2 py-0.5 text-xs font-semibold">{{ fmt(result.incentive?.total ?? 0) }}</span>
+                                </div>
+                                <button @click="subTab = 'incentives'" class="text-xs text-muted-foreground hover:text-foreground underline">Manage</button>
+                            </div>
+                            <p class="text-xs text-muted-foreground">Distributed proportionally by product sales, then split by product ownership %.</p>
+                        </div>
+
+                        <!-- No rules -->
+                        <div v-if="!result.incentive?.rules?.length" class="p-6 text-center">
+                            <Gift class="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+                            <p class="text-sm text-muted-foreground">No active incentive rules.</p>
+                            <button @click="subTab = 'incentives'" class="mt-3 rounded-lg bg-primary px-4 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90">Set up Incentive Rules</button>
+                        </div>
+                        <template v-else>
+                            <!-- Active rules summary -->
+                            <div class="p-3 border-b space-y-1">
+                                <p class="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Active Rules</p>
+                                <div v-for="r in result.incentive.rules" :key="r.id" class="flex items-center justify-between text-sm">
+                                    <span class="text-muted-foreground text-xs">{{ r.name }} — {{ r.pool_type === 'fixed_amount' ? '₱' + r.rate : r.rate + '% of ' + poolTypeLabel(r.pool_type).replace('% of ', '') }}</span>
+                                    <span class="font-bold text-amber-600 text-xs">{{ fmt(r.pool_amount) }}</span>
+                                </div>
+                            </div>
+
+                            <!-- Incentive pie chart -->
+                            <div v-if="incentivePieData" class="p-4 border-b">
+                                <p class="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Incentive Distribution</p>
+                                <apexchart type="pie" height="220" :options="incentivePieOptions" :series="incentivePieSeries" />
+                            </div>
+
+                            <!-- No sales in period -->
+                            <div v-if="!result.incentive.by_product?.length" class="p-6 text-center">
+                                <Package class="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+                                <p class="text-sm text-muted-foreground">No product sales in this period.</p>
+                            </div>
+
+                            <!-- Product breakdown (mobile) -->
+                            <div v-else class="sm:hidden divide-y max-h-80 overflow-y-auto">
+                                <div v-for="p in result.incentive.by_product" :key="p.product_id" class="p-3 space-y-1.5">
+                                    <div class="flex justify-between items-start">
+                                        <span class="font-semibold text-sm leading-tight">{{ p.product_name }}</span>
+                                        <span class="font-bold text-amber-600 text-sm shrink-0 ml-2">{{ fmt(p.product_incentive) }}</span>
+                                    </div>
+                                    <div class="flex justify-between text-xs text-muted-foreground">
+                                        <span>Sales: {{ fmt(p.sales_amount) }}</span>
+                                        <span>{{ p.contribution_pct }}% of pool</span>
+                                    </div>
+                                    <div v-if="p.owners.length" class="space-y-0.5">
+                                        <div v-for="o in p.owners" :key="o.shareholder_id" class="flex justify-between text-xs">
+                                            <span class="text-muted-foreground pl-2">→ {{ o.name }} ({{ o.ownership_pct }}%)</span>
+                                            <span class="text-blue-600 font-medium">{{ fmt(o.amount) }}</span>
+                                        </div>
+                                    </div>
+                                    <div v-else class="text-xs text-muted-foreground pl-2">→ Company (unowned)</div>
+                                </div>
+                            </div>
+
+                            <!-- Product breakdown (desktop) -->
+                            <div v-if="result.incentive.by_product?.length" class="hidden sm:block overflow-x-auto max-h-80 overflow-y-auto">
+                                <table class="w-full text-sm">
+                                    <thead class="bg-muted/50 text-muted-foreground text-xs uppercase sticky top-0"><tr>
+                                        <th class="px-3 py-2 text-left">Product</th>
+                                        <th class="px-3 py-2 text-right">Sales</th>
+                                        <th class="px-3 py-2 text-right">Contrib %</th>
+                                        <th class="px-3 py-2 text-right">Incentive</th>
+                                        <th class="px-3 py-2 text-left">Distribution</th>
+                                    </tr></thead>
+                                    <tbody class="divide-y">
+                                        <tr v-for="p in result.incentive.by_product" :key="p.product_id" class="hover:bg-muted/20">
+                                            <td class="px-3 py-2 font-medium max-w-[140px] truncate" :title="p.product_name">{{ p.product_name }}</td>
+                                            <td class="px-3 py-2 text-right text-xs">{{ fmt(p.sales_amount) }}</td>
+                                            <td class="px-3 py-2 text-right text-xs text-muted-foreground">{{ p.contribution_pct }}%</td>
+                                            <td class="px-3 py-2 text-right font-bold text-amber-600">{{ fmt(p.product_incentive) }}</td>
+                                            <td class="px-3 py-2 text-xs">
+                                                <span v-if="!p.owners.length" class="text-muted-foreground italic">Company</span>
+                                                <span v-else>{{ p.owners.map((o: any) => o.name + ' ' + fmt(o.amount)).join(', ') }}</span>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <!-- Shareholder + company summary -->
+                            <div v-if="result.incentive.by_shareholder?.length || result.incentive.company_retained > 0" class="border-t p-3 space-y-1.5">
+                                <p class="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Incentive Summary</p>
+                                <div v-for="s in result.incentive.by_shareholder" :key="s.shareholder_id" class="flex justify-between text-sm">
+                                    <span class="text-muted-foreground">{{ s.name }}</span>
+                                    <span class="font-bold text-blue-600">{{ fmt(s.incentive_amount) }}</span>
+                                </div>
+                                <div v-if="result.incentive.company_retained > 0" class="flex justify-between text-sm">
+                                    <span class="text-muted-foreground">Company (unowned products)</span>
+                                    <span class="font-bold text-emerald-600">{{ fmt(result.incentive.company_retained) }}</span>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
                 </div>
 
-                <!-- Royalty recipients: in hybrid, only unlinked recipients shown here;
-                     linked recipients' royalties are already in the member table -->
-                <div v-if="visibleRoyaltyRecipients.length" class="rounded-xl border bg-card shadow-sm p-4">
-                    <h3 class="font-bold text-sm mb-2">Royalty Recipients</h3>
-                    <div class="flex flex-wrap gap-2">
-                        <span v-for="r in visibleRoyaltyRecipients" :key="r.recipient_name" class="rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-3 py-1 text-sm font-medium">{{ r.recipient_name }}: {{ fmt(r.amount) }}</span>
+                <!-- Combined payout summary -->
+                <div v-if="combinedSummary.length" class="rounded-xl border bg-card shadow-sm overflow-hidden">
+                    <div class="p-4 border-b">
+                        <h3 class="font-bold text-sm">Total Payout per Shareholder</h3>
+                        <p class="text-xs text-muted-foreground mt-0.5">Ownership dividend + product ownership incentive combined.</p>
                     </div>
+                    <!-- Combined pie chart -->
+                    <div v-if="combinedPieData" class="p-4 border-b">
+                        <apexchart type="pie" height="260" :options="combinedPieOptions" :series="combinedPieSeries" />
+                    </div>
+                    <!-- Mobile cards -->
+                    <div class="sm:hidden divide-y">
+                        <div v-for="m in combinedSummary" :key="m.shareholder_id" class="p-3 space-y-1.5">
+                            <div class="font-semibold text-sm">{{ m.name }}</div>
+                            <div class="flex justify-between text-xs"><span class="text-muted-foreground">Dividend</span><span class="text-blue-600">{{ fmt(m.amount) }}</span></div>
+                            <div class="flex justify-between text-xs"><span class="text-muted-foreground">Incentive</span><span class="text-amber-600">{{ fmt(m.incentive_amount) }}</span></div>
+                            <div class="flex justify-between font-bold text-sm"><span>Total</span><span>{{ fmt(m.total_amount) }}</span></div>
+                        </div>
+                    </div>
+                    <!-- Desktop table -->
+                    <table class="hidden sm:table w-full text-sm">
+                        <thead class="bg-muted/50 text-muted-foreground text-xs uppercase"><tr>
+                            <th class="px-4 py-2 text-left">Shareholder</th>
+                            <th class="px-4 py-2 text-right">Ownership</th>
+                            <th class="px-4 py-2 text-right text-blue-600">Dividend</th>
+                            <th class="px-4 py-2 text-right text-amber-600">Incentive</th>
+                            <th class="px-4 py-2 text-right">Total Payout</th>
+                        </tr></thead>
+                        <tbody class="divide-y">
+                            <tr v-for="m in combinedSummary" :key="m.shareholder_id" class="hover:bg-muted/20">
+                                <td class="px-4 py-2 font-medium">{{ m.name }}</td>
+                                <td class="px-4 py-2 text-right text-muted-foreground">{{ m.percentage }}%</td>
+                                <td class="px-4 py-2 text-right text-blue-600 font-medium">{{ fmt(m.amount) }}</td>
+                                <td class="px-4 py-2 text-right text-amber-600 font-medium">{{ fmt(m.incentive_amount) }}</td>
+                                <td class="px-4 py-2 text-right font-bold">{{ fmt(m.total_amount) }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
                 </div>
             </template>
         </template>
@@ -431,14 +666,40 @@ const tabs = [
                 </div>
             </div>
             <div class="rounded-xl border bg-card shadow-sm overflow-hidden">
-                <table class="w-full text-sm">
-                    <thead class="bg-muted/50 text-muted-foreground text-xs uppercase"><tr><th class="px-4 py-2 text-left">Name</th><th class="px-4 py-2 text-left">Email</th><th class="px-4 py-2 text-right">Ownership</th><th class="px-4 py-2 text-center">Status</th><th class="px-4 py-2"></th></tr></thead>
+                <!-- Mobile cards -->
+                <div class="sm:hidden divide-y">
+                    <div v-for="s in shareholders" :key="s.id" class="p-3 space-y-1.5">
+                        <div class="flex justify-between items-start">
+                            <span class="font-semibold text-sm">{{ s.name }}</span>
+                            <span :class="['rounded-full px-2 py-0.5 text-xs', s.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500']">{{ s.status }}</span>
+                        </div>
+                        <div class="text-xs text-muted-foreground">{{ s.email ?? '—' }}</div>
+                        <div class="flex justify-between items-center">
+                            <span class="text-sm font-bold">{{ s.ownership_percentage }}%</span>
+                            <div class="flex gap-1">
+                                <button @click="editSh(s)" class="p-1.5 text-muted-foreground hover:text-blue-600"><Pencil class="h-4 w-4" /></button>
+                                <button @click="deleteSh(s)" class="p-1.5 text-muted-foreground hover:text-red-600"><Trash2 class="h-4 w-4" /></button>
+                            </div>
+                        </div>
+                    </div>
+                    <div v-if="!shareholders.length" class="px-4 py-8 text-center text-muted-foreground text-sm">No shareholders yet.</div>
+                </div>
+                <!-- Desktop table -->
+                <table class="hidden sm:table w-full text-sm">
+                    <thead class="bg-muted/50 text-muted-foreground text-xs uppercase"><tr>
+                        <th class="px-4 py-2 text-left">Name</th><th class="px-4 py-2 text-left">Email</th>
+                        <th class="px-4 py-2 text-right">Ownership</th><th class="px-4 py-2 text-center">Status</th><th class="px-4 py-2"></th>
+                    </tr></thead>
                     <tbody class="divide-y">
                         <tr v-for="s in shareholders" :key="s.id" class="hover:bg-muted/20">
-                            <td class="px-4 py-2 font-medium">{{ s.name }}</td><td class="px-4 py-2 text-muted-foreground">{{ s.email ?? '—' }}</td>
+                            <td class="px-4 py-2 font-medium">{{ s.name }}</td>
+                            <td class="px-4 py-2 text-muted-foreground">{{ s.email ?? '—' }}</td>
                             <td class="px-4 py-2 text-right font-bold">{{ s.ownership_percentage }}%</td>
                             <td class="px-4 py-2 text-center"><span :class="['rounded-full px-2 py-0.5 text-xs', s.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500']">{{ s.status }}</span></td>
-                            <td class="px-4 py-2 text-right"><button @click="editSh(s)" class="p-1 text-muted-foreground hover:text-blue-600"><Pencil class="h-4 w-4" /></button><button @click="deleteSh(s)" class="p-1 text-muted-foreground hover:text-red-600"><Trash2 class="h-4 w-4" /></button></td>
+                            <td class="px-4 py-2 text-right">
+                                <button @click="editSh(s)" class="p-1 text-muted-foreground hover:text-blue-600"><Pencil class="h-4 w-4" /></button>
+                                <button @click="deleteSh(s)" class="p-1 text-muted-foreground hover:text-red-600"><Trash2 class="h-4 w-4" /></button>
+                            </td>
                         </tr>
                         <tr v-if="!shareholders.length"><td colspan="5" class="px-4 py-8 text-center text-muted-foreground">No shareholders yet.</td></tr>
                     </tbody>
@@ -446,38 +707,185 @@ const tabs = [
             </div>
         </template>
 
-        <!-- ── ROYALTIES ────────────────────────────────────────────────── -->
-        <template v-if="subTab === 'royalties'">
+        <!-- ── INCENTIVES ───────────────────────────────────────────────── -->
+        <template v-if="subTab === 'incentives'">
+            <!-- Info banner -->
+            <div class="rounded-xl border bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800 p-4 text-sm text-amber-900 dark:text-amber-200">
+                <strong>How it works:</strong> Set an incentive rate (e.g., 2% of gross sales). Each product's share of the pool is proportional to its sales. That share is then split among the product's assigned owners by their ownership %.
+                Unowned products' incentives stay with the company. This is independent of the ownership dividend.
+            </div>
+
+            <!-- Section 1: Incentive Rate Rules -->
             <div class="rounded-xl border bg-card shadow-sm p-4">
-                <h3 class="font-bold text-sm mb-3">{{ rForm.id ? 'Edit' : 'Add' }} Royalty Rule</h3>
-                <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                    <div><label class="text-xs text-muted-foreground block mb-1">Scope</label><select v-model="rForm.scope" class="w-full rounded-lg border bg-background px-3 py-2 text-sm"><option value="product">Product</option><option value="category">Category</option></select></div>
-                    <div v-if="rForm.scope === 'product'"><label class="text-xs text-muted-foreground block mb-1">Product *</label><select v-model="rForm.product_id" class="w-full rounded-lg border bg-background px-3 py-2 text-sm"><option value="">Select…</option><option v-for="p in products" :key="p.id" :value="p.id">{{ p.name }}</option></select></div>
-                    <div v-else><label class="text-xs text-muted-foreground block mb-1">Category *</label><select v-model="rForm.category_id" class="w-full rounded-lg border bg-background px-3 py-2 text-sm"><option value="">Select…</option><option v-for="c in categories" :key="c.id" :value="c.id">{{ c.name }}</option></select></div>
-                    <div><label class="text-xs text-muted-foreground block mb-1">Recipient *</label><input v-model="rForm.recipient_name" placeholder="e.g. Brand Owner" class="w-full rounded-lg border bg-background px-3 py-2 text-sm" /></div>
-                    <div><label class="text-xs text-muted-foreground block mb-1">Link to member</label><select v-model="rForm.shareholder_id" class="w-full rounded-lg border bg-background px-3 py-2 text-sm"><option value="">None</option><option v-for="s in shareholders" :key="s.id" :value="s.id">{{ s.name }}</option></select></div>
-                    <div><label class="text-xs text-muted-foreground block mb-1">Royalty %</label><input v-model="rForm.royalty_percentage" type="number" step="0.01" class="w-full rounded-lg border bg-background px-3 py-2 text-sm" /></div>
-                    <div><label class="text-xs text-muted-foreground block mb-1">Effective</label><input v-model="rForm.effective_date" type="date" class="w-full rounded-lg border bg-background px-3 py-2 text-sm" /></div>
-                    <div><label class="text-xs text-muted-foreground block mb-1">Expires (optional)</label><input v-model="rForm.expiration_date" type="date" class="w-full rounded-lg border bg-background px-3 py-2 text-sm" /></div>
+                <h3 class="font-bold text-sm mb-3">{{ iForm.id ? 'Edit' : 'Add' }} Incentive Rate Rule</h3>
+                <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    <div class="lg:col-span-2"><label class="text-xs text-muted-foreground block mb-1">Rule Name *</label><input v-model="iForm.name" placeholder="e.g. Monthly Product Incentive" class="w-full rounded-lg border bg-background px-3 py-2 text-sm" /></div>
+                    <div><label class="text-xs text-muted-foreground block mb-1">Pool Type</label>
+                        <select v-model="iForm.pool_type" class="w-full rounded-lg border bg-background px-3 py-2 text-sm">
+                            <option value="gross_sales_pct">% of Gross Sales</option>
+                            <option value="gross_profit_pct">% of Gross Profit</option>
+                            <option value="net_profit_pct">% of Net Profit</option>
+                            <option value="fixed_amount">Fixed ₱ Amount</option>
+                        </select></div>
+                    <div><label class="text-xs text-muted-foreground block mb-1">Rate ({{ poolTypeUnit(iForm.pool_type) }}) *</label>
+                        <input v-model="iForm.rate" type="number" step="0.01" :placeholder="iForm.pool_type === 'fixed_amount' ? '5000' : '2.0'" class="w-full rounded-lg border bg-background px-3 py-2 text-sm" /></div>
+                    <div><label class="text-xs text-muted-foreground block mb-1">Effective Date *</label><input v-model="iForm.effective_date" type="date" class="w-full rounded-lg border bg-background px-3 py-2 text-sm" /></div>
+                    <div><label class="text-xs text-muted-foreground block mb-1">Expires (optional)</label><input v-model="iForm.expiration_date" type="date" class="w-full rounded-lg border bg-background px-3 py-2 text-sm" /></div>
+                    <div><label class="text-xs text-muted-foreground block mb-1">Notes</label><input v-model="iForm.notes" placeholder="Optional" class="w-full rounded-lg border bg-background px-3 py-2 text-sm" /></div>
                     <div class="flex items-end gap-2">
-                        <button @click="saveRule" :disabled="rSaving || !rForm.recipient_name" class="flex-1 rounded-lg bg-primary px-3 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">{{ rForm.id ? 'Update' : 'Add Rule' }}</button>
-                        <button v-if="rForm.id" @click="resetRForm" class="rounded-lg border px-3 py-2"><X class="h-4 w-4" /></button>
+                        <label class="flex items-center gap-2 cursor-pointer select-none">
+                            <div class="relative"><input type="checkbox" v-model="iForm.is_active" class="sr-only peer" /><div class="w-9 h-5 bg-muted rounded-full peer peer-checked:bg-primary transition"></div><div class="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition peer-checked:translate-x-4"></div></div>
+                            <span class="text-sm">Active</span>
+                        </label>
+                    </div>
+                    <div class="flex items-end gap-2">
+                        <button @click="saveIncentive" :disabled="iSaving || !iForm.name || !iForm.rate" class="flex-1 rounded-lg bg-primary px-3 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">{{ iForm.id ? 'Update' : 'Add Rule' }}</button>
+                        <button v-if="iForm.id" @click="resetIForm" class="rounded-lg border px-3 py-2"><X class="h-4 w-4" /></button>
                     </div>
                 </div>
             </div>
+            <!-- Active rules table -->
             <div class="rounded-xl border bg-card shadow-sm overflow-hidden">
-                <table class="w-full text-sm">
-                    <thead class="bg-muted/50 text-muted-foreground text-xs uppercase"><tr><th class="px-4 py-2 text-left">Scope</th><th class="px-4 py-2 text-left">Target</th><th class="px-4 py-2 text-left">Recipient</th><th class="px-4 py-2 text-right">%</th><th class="px-4 py-2 text-left">Window</th><th class="px-4 py-2"></th></tr></thead>
+                <div class="sm:hidden divide-y">
+                    <div v-for="r in incentiveRules" :key="r.id" :class="['p-3 space-y-1.5', !r.is_active && 'opacity-50']">
+                        <div class="flex justify-between items-start">
+                            <span class="font-semibold text-sm">{{ r.name }}</span>
+                            <span class="text-xs font-bold text-amber-600">{{ r.pool_type === 'fixed_amount' ? fmt(r.rate) : r.rate + '% of ' + poolTypeLabel(r.pool_type).replace('% of ', '') }}</span>
+                        </div>
+                        <div class="text-xs text-muted-foreground">{{ poolTypeLabel(r.pool_type) }}</div>
+                        <div class="flex justify-between items-center">
+                            <span class="text-xs text-muted-foreground">{{ r.effective_date?.slice(0,10) }} → {{ r.expiration_date?.slice(0,10) ?? '∞' }}</span>
+                            <div class="flex gap-1">
+                                <button @click="editIncentive(r)" class="p-1.5 text-muted-foreground hover:text-blue-600"><Pencil class="h-4 w-4" /></button>
+                                <button @click="deleteIncentive(r)" class="p-1.5 text-muted-foreground hover:text-red-600"><Trash2 class="h-4 w-4" /></button>
+                            </div>
+                        </div>
+                    </div>
+                    <div v-if="!incentiveRules.length" class="px-4 py-6 text-center text-muted-foreground text-sm">No incentive rules yet.</div>
+                </div>
+                <table class="hidden sm:table w-full text-sm">
+                    <thead class="bg-muted/50 text-muted-foreground text-xs uppercase"><tr>
+                        <th class="px-4 py-2 text-left">Name</th><th class="px-4 py-2 text-left">Type</th>
+                        <th class="px-4 py-2 text-right">Rate</th>
+                        <th class="px-4 py-2 text-left">Window</th><th class="px-4 py-2 text-center">Active</th><th class="px-4 py-2"></th>
+                    </tr></thead>
                     <tbody class="divide-y">
-                        <tr v-for="r in rules" :key="r.id" :class="['hover:bg-muted/20', !r.is_active && 'opacity-50']">
-                            <td class="px-4 py-2 capitalize">{{ r.scope }}</td>
-                            <td class="px-4 py-2">{{ r.product?.name ?? r.category?.name ?? '—' }}</td>
-                            <td class="px-4 py-2">{{ r.recipient_name }}<span v-if="r.shareholder" class="text-xs text-muted-foreground"> ({{ r.shareholder.name }})</span></td>
-                            <td class="px-4 py-2 text-right font-bold">{{ r.royalty_percentage }}%</td>
+                        <tr v-for="r in incentiveRules" :key="r.id" :class="['hover:bg-muted/20', !r.is_active && 'opacity-50']">
+                            <td class="px-4 py-2 font-medium">{{ r.name }}</td>
+                            <td class="px-4 py-2 text-xs text-muted-foreground">{{ poolTypeLabel(r.pool_type) }}</td>
+                            <td class="px-4 py-2 text-right font-bold text-amber-600">{{ r.pool_type === 'fixed_amount' ? fmt(r.rate) : r.rate + '%' }}</td>
                             <td class="px-4 py-2 text-xs text-muted-foreground">{{ r.effective_date?.slice(0,10) }} → {{ r.expiration_date?.slice(0,10) ?? '∞' }}</td>
-                            <td class="px-4 py-2 text-right"><button @click="editRule(r)" class="p-1 text-muted-foreground hover:text-blue-600"><Pencil class="h-4 w-4" /></button><button @click="deleteRule(r)" class="p-1 text-muted-foreground hover:text-red-600"><Trash2 class="h-4 w-4" /></button></td>
+                            <td class="px-4 py-2 text-center"><span :class="['rounded-full px-2 py-0.5 text-xs', r.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500']">{{ r.is_active ? 'Yes' : 'No' }}</span></td>
+                            <td class="px-4 py-2 text-right">
+                                <button @click="editIncentive(r)" class="p-1 text-muted-foreground hover:text-blue-600"><Pencil class="h-4 w-4" /></button>
+                                <button @click="deleteIncentive(r)" class="p-1 text-muted-foreground hover:text-red-600"><Trash2 class="h-4 w-4" /></button>
+                            </td>
                         </tr>
-                        <tr v-if="!rules.length"><td colspan="6" class="px-4 py-8 text-center text-muted-foreground">No royalty rules yet.</td></tr>
+                        <tr v-if="!incentiveRules.length"><td colspan="6" class="px-4 py-6 text-center text-muted-foreground">No incentive rules yet.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Section 2: Product Ownership -->
+            <div class="rounded-xl border bg-card shadow-sm overflow-hidden">
+                <div class="p-4 border-b">
+                    <div class="flex items-center gap-2 mb-1">
+                        <Package class="h-4 w-4 text-primary" />
+                        <h3 class="font-bold text-sm">Product Ownership</h3>
+                    </div>
+                    <p class="text-xs text-muted-foreground">Assign shareholders as product owners. Ownership % per product must total 100%. Products without owners are company-owned.</p>
+                </div>
+
+                <!-- Search -->
+                <div class="p-3 border-b">
+                    <input v-model="productFilter" placeholder="Search products…" class="w-full rounded-lg border bg-background px-3 py-2 text-sm" />
+                </div>
+
+                <!-- Edit panel -->
+                <div v-if="editProductId !== null" class="p-4 border-b bg-amber-50 dark:bg-amber-950/20">
+                    <div class="flex items-center justify-between mb-3">
+                        <h4 class="font-semibold text-sm">Editing: <span class="text-primary">{{ editProductName }}</span></h4>
+                        <button @click="editProductId = null" class="p-1 rounded hover:bg-muted"><X class="h-4 w-4" /></button>
+                    </div>
+                    <!-- Owner rows -->
+                    <div class="space-y-2 mb-3">
+                        <div v-for="(row, i) in editOwnerRows" :key="i" class="flex items-center gap-2">
+                            <select v-model="row.shareholder_id" class="flex-1 min-w-0 rounded-lg border bg-background px-3 py-2 text-sm">
+                                <option value="">Select shareholder…</option>
+                                <option v-for="s in shareholders" :key="s.id" :value="s.id">{{ s.name }}</option>
+                            </select>
+                            <div class="relative w-24 shrink-0">
+                                <input v-model="row.ownership_percentage" type="number" step="0.01" min="0.01" max="100" placeholder="%" class="w-full rounded-lg border bg-background px-3 py-2 text-sm text-right pr-6" />
+                                <span class="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">%</span>
+                            </div>
+                            <button @click="removeOwnerRow(i)" class="p-1.5 text-muted-foreground hover:text-red-600 shrink-0"><Trash2 class="h-4 w-4" /></button>
+                        </div>
+                        <div v-if="!editOwnerRows.length" class="text-sm text-muted-foreground italic">No owners — saving will make this product company-owned.</div>
+                    </div>
+                    <!-- Footer -->
+                    <div class="flex items-center justify-between flex-wrap gap-2">
+                        <div class="flex items-center gap-3">
+                            <button @click="addOwnerRow" class="rounded-lg border px-3 py-1.5 text-xs font-medium hover:bg-muted flex items-center gap-1.5"><Plus class="h-3 w-3" /> Add Owner</button>
+                            <span v-if="editOwnerRows.length" :class="['text-xs font-bold tabular-nums', Math.abs(ownerTotalPct - 100) < 0.01 ? 'text-emerald-600' : 'text-amber-600']">
+                                {{ ownerTotalPct.toFixed(1) }}% / 100%
+                            </span>
+                        </div>
+                        <div class="flex gap-2">
+                            <button @click="editProductId = null" class="rounded-lg border px-3 py-1.5 text-xs">Cancel</button>
+                            <button @click="saveProductOwnership" :disabled="productOwnerSaving || (editOwnerRows.length > 0 && (Math.abs(ownerTotalPct - 100) > 0.01 || editOwnerRows.some(r => !r.shareholder_id)))"
+                                class="rounded-lg bg-primary px-3 py-1.5 text-xs font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+                                {{ productOwnerSaving ? 'Saving…' : 'Save' }}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Mobile product cards -->
+                <div class="sm:hidden divide-y">
+                    <div v-for="p in filteredProducts" :key="p.product_id" :class="['p-3 space-y-1.5', editProductId === p.product_id && 'bg-muted/30']">
+                        <div class="flex justify-between items-start gap-2">
+                            <span class="font-semibold text-sm leading-tight">{{ p.product_name }}</span>
+                            <div class="flex gap-1 shrink-0">
+                                <button @click="startEditProduct(p)" class="p-1.5 text-muted-foreground hover:text-blue-600"><Pencil class="h-4 w-4" /></button>
+                                <button v-if="p.owners.length" @click="clearProductOwnership(p.product_id, p.product_name)" class="p-1.5 text-muted-foreground hover:text-red-600"><Trash2 class="h-4 w-4" /></button>
+                            </div>
+                        </div>
+                        <div v-if="p.owners.length" class="space-y-0.5">
+                            <div v-for="o in p.owners" :key="o.shareholder_id" class="text-xs text-muted-foreground">
+                                {{ o.name }} — {{ o.ownership_percentage }}%
+                            </div>
+                            <span :class="['text-xs font-bold', p.total_percentage === 100 ? 'text-emerald-600' : 'text-amber-600']">Total: {{ p.total_percentage }}%</span>
+                        </div>
+                        <div v-else class="text-xs text-muted-foreground italic">Company owned</div>
+                    </div>
+                    <div v-if="!filteredProducts.length" class="px-4 py-8 text-center text-muted-foreground text-sm">No products found.</div>
+                </div>
+
+                <!-- Desktop product table -->
+                <table class="hidden sm:table w-full text-sm">
+                    <thead class="bg-muted/50 text-muted-foreground text-xs uppercase"><tr>
+                        <th class="px-4 py-2 text-left">Product</th>
+                        <th class="px-4 py-2 text-left">Owners</th>
+                        <th class="px-4 py-2 text-right">Total %</th>
+                        <th class="px-4 py-2"></th>
+                    </tr></thead>
+                    <tbody class="divide-y">
+                        <tr v-for="p in filteredProducts" :key="p.product_id" :class="['hover:bg-muted/20', editProductId === p.product_id && 'bg-muted/30']">
+                            <td class="px-4 py-2 font-medium">{{ p.product_name }}</td>
+                            <td class="px-4 py-2 text-xs">
+                                <span v-if="!p.owners.length" class="text-muted-foreground italic">Company owned</span>
+                                <span v-else>{{ p.owners.map((o: any) => o.name + ' ' + o.ownership_percentage + '%').join(' · ') }}</span>
+                            </td>
+                            <td class="px-4 py-2 text-right">
+                                <span v-if="p.owners.length" :class="['text-xs font-bold', p.total_percentage === 100 ? 'text-emerald-600' : 'text-amber-600']">{{ p.total_percentage }}%</span>
+                                <span v-else class="text-xs text-muted-foreground">—</span>
+                            </td>
+                            <td class="px-4 py-2 text-right whitespace-nowrap">
+                                <button @click="startEditProduct(p)" class="p-1 text-muted-foreground hover:text-blue-600" title="Edit owners"><Pencil class="h-4 w-4" /></button>
+                                <button v-if="p.owners.length" @click="clearProductOwnership(p.product_id, p.product_name)" class="p-1 text-muted-foreground hover:text-red-600" title="Remove all owners"><Trash2 class="h-4 w-4" /></button>
+                            </td>
+                        </tr>
+                        <tr v-if="!filteredProducts.length"><td colspan="4" class="px-4 py-8 text-center text-muted-foreground">No products found.</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -486,19 +894,9 @@ const tabs = [
         <!-- ── TRENDS ───────────────────────────────────────────────────────── -->
         <template v-if="subTab === 'trends'">
             <div class="rounded-xl border bg-card shadow-sm p-4">
-                <h3 class="font-bold text-sm mb-2 flex items-center gap-2"><TrendingUp class="h-4 w-4 text-primary" /> Monthly Distribution Trend (this year, {{ basis === 'hybrid' ? 'hybrid (sales + profit)' : basis }} basis)</h3>
+                <h3 class="font-bold text-sm mb-2 flex items-center gap-2"><TrendingUp class="h-4 w-4 text-primary" /> Monthly Distribution Trend (this year)</h3>
                 <apexchart v-if="trend.length" type="line" height="320" :options="trendOptions" :series="trendSeries" />
                 <p v-else class="text-sm text-muted-foreground text-center py-10">No data.</p>
-            </div>
-            <div v-if="royaltyAnalytics" class="rounded-xl border bg-card shadow-sm overflow-hidden">
-                <div class="p-4 border-b flex items-center justify-between"><h3 class="font-bold text-sm">Top Royalty Products</h3><span class="text-sm font-bold text-amber-600">Total: {{ fmt(royaltyAnalytics.total) }}</span></div>
-                <table class="w-full text-sm">
-                    <thead class="bg-muted/50 text-muted-foreground text-xs uppercase"><tr><th class="px-4 py-2 text-left">Product</th><th class="px-4 py-2 text-right">Net Sales</th><th class="px-4 py-2 text-right">Rate</th><th class="px-4 py-2 text-right">Royalty</th></tr></thead>
-                    <tbody class="divide-y">
-                        <tr v-for="p in royaltyAnalytics.by_product" :key="p.name" class="hover:bg-muted/20"><td class="px-4 py-2 font-medium">{{ p.name }}</td><td class="px-4 py-2 text-right">{{ fmt(p.net_sales) }}</td><td class="px-4 py-2 text-right">{{ p.rate }}%</td><td class="px-4 py-2 text-right font-bold text-amber-600">{{ fmt(p.royalty) }}</td></tr>
-                        <tr v-if="!royaltyAnalytics.by_product.length"><td colspan="4" class="px-4 py-8 text-center text-muted-foreground">No royalties in range.</td></tr>
-                    </tbody>
-                </table>
             </div>
         </template>
 
@@ -621,99 +1019,59 @@ const tabs = [
         <!-- ── HELP ───────────────────────────────────────────────────────────── -->
         <template v-if="subTab === 'help'">
             <div class="grid lg:grid-cols-2 gap-4">
-                <!-- Overview -->
                 <div class="rounded-xl border bg-card shadow-sm p-5 space-y-3 lg:col-span-2">
-                    <h3 class="font-bold text-base flex items-center gap-2"><HelpCircle class="h-5 w-5 text-primary" /> What is Profit Sharing?</h3>
-                    <p class="text-sm text-muted-foreground leading-relaxed">
-                        This tool automatically computes how much each <strong>shareholder</strong> receives, how much goes to
-                        <strong>royalty recipients</strong>, and how much the company keeps as <strong>retained earnings</strong> —
-                        calculated directly from your real sales and financial records. Nothing here changes your accounting;
-                        it only reads existing data. Saving a <strong>Snapshot</strong> stores a historical copy for the record.
-                    </p>
-                </div>
-
-                <!-- Basis -->
-                <div class="rounded-xl border bg-card shadow-sm p-5 space-y-3">
-                    <h3 class="font-bold text-sm">Sales vs Profit vs Hybrid basis</h3>
-                    <div class="space-y-2 text-sm">
-                        <p><span class="font-semibold text-primary">Sales basis</span> — shares are computed from
-                            <code class="bg-muted px-1 rounded">Net Sales − Refunds</code>. Use when partners are paid on revenue.</p>
-                        <p><span class="font-semibold text-primary">Profit basis</span> — shares are computed from
-                            <code class="bg-muted px-1 rounded">Net Profit</code> (revenue − COGS − operating expenses), reusing the
-                            same figures as your P&amp;L report. Use when partners are paid on actual profit.</p>
-                        <p><span class="font-semibold text-violet-600">Hybrid basis</span> — each member's payout is
-                            <code class="bg-muted px-1 rounded">Profit Share + their linked Royalties</code>. Profit share is the same
-                            as Profit basis (ownership % × distributable). Royalties are added on top only for members who have royalty
-                            rules directly linked to their shareholder account. Members with no linked rules receive only their profit share.</p>
-                        <p class="text-xs text-muted-foreground">When you filter Profit/Hybrid basis by a single product or category,
-                            the profit component becomes that scope's net sales, since operating expenses can't be split per product.</p>
+                    <h3 class="font-bold text-base flex items-center gap-2"><HelpCircle class="h-5 w-5 text-primary" /> Two Independent Calculations</h3>
+                    <p class="text-sm text-muted-foreground leading-relaxed">Ownership dividends and product ownership incentives are completely separate — they never interfere with each other.</p>
+                    <div class="grid sm:grid-cols-2 gap-3 mt-2">
+                        <div class="rounded-lg bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 p-3">
+                            <p class="font-bold text-sm text-blue-700 dark:text-blue-400 mb-1">Ownership Dividend</p>
+                            <p class="text-xs text-blue-800/80 dark:text-blue-300/80">Shareholders receive their equity % of the distributable pool. Company gets the remainder.</p>
+                        </div>
+                        <div class="rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 p-3">
+                            <p class="font-bold text-sm text-amber-700 dark:text-amber-400 mb-1">Product Ownership Incentive</p>
+                            <p class="text-xs text-amber-800/80 dark:text-amber-300/80">A separate pool (e.g. 2% of gross sales). Each product earns a share proportional to its sales. That share is split among the product's assigned owners. Unowned products' share stays with the company.</p>
+                        </div>
                     </div>
                 </div>
 
-                <!-- Calculation flow -->
                 <div class="rounded-xl border bg-card shadow-sm p-5 space-y-3">
-                    <h3 class="font-bold text-sm">The calculation, step by step</h3>
-                    <ol class="text-sm space-y-1.5 list-decimal list-inside text-muted-foreground">
-                        <li><strong class="text-foreground">Base amount</strong> — Net Sales (Sales basis) or Net Profit (Profit basis).</li>
-                        <li><strong class="text-foreground">− Royalties</strong> — product/category royalties are deducted first.</li>
-                        <li><strong class="text-foreground">= Distributable</strong> — what's left to split.</li>
-                        <li><strong class="text-foreground">Member shares</strong> — each member gets Distributable × ownership %.</li>
-                        <li><strong class="text-foreground">Company retained</strong> — the remaining percentage stays with the company.</li>
-                    </ol>
-                </div>
-
-                <!-- Worked example -->
-                <div class="rounded-xl border bg-card shadow-sm p-5 space-y-2 lg:col-span-2">
                     <h3 class="font-bold text-sm">Worked example</h3>
                     <div class="overflow-x-auto">
-                        <table class="text-sm min-w-[420px]">
-                            <tbody class="[&_td]:py-1 [&_td]:pr-6">
-                                <tr><td class="text-muted-foreground">Net Sales</td><td class="font-bold text-right">₱1,000,000</td></tr>
-                                <tr><td class="text-muted-foreground">− Royalties</td><td class="font-bold text-right text-amber-600">₱50,000</td></tr>
-                                <tr class="border-t"><td class="text-muted-foreground">= Distributable</td><td class="font-bold text-right text-primary">₱950,000</td></tr>
-                                <tr><td class="pl-4">Member 1 — 10%</td><td class="text-right">₱95,000</td></tr>
-                                <tr><td class="pl-4">Member 2 — 20%</td><td class="text-right">₱190,000</td></tr>
-                                <tr><td class="pl-4">Member 3 — 10%</td><td class="text-right">₱95,000</td></tr>
-                                <tr class="border-t"><td>Members total (40%)</td><td class="font-bold text-right">₱380,000</td></tr>
-                                <tr><td class="text-emerald-600">Company retained (60%)</td><td class="font-bold text-right text-emerald-600">₱570,000</td></tr>
+                        <table class="text-sm min-w-[360px]">
+                            <tbody class="[&_td]:py-1 [&_td]:pr-4">
+                                <tr><td class="text-muted-foreground">Total Gross Sales</td><td class="font-bold text-right">₱1,000,000</td></tr>
+                                <tr><td class="text-muted-foreground">Incentive Rate</td><td class="font-bold text-right">2%</td></tr>
+                                <tr class="border-t"><td class="text-muted-foreground">Incentive Pool</td><td class="font-bold text-right text-amber-600">₱20,000</td></tr>
+                                <tr class="border-t"><td colspan="2" class="text-xs font-semibold text-muted-foreground pt-2">Classic Burger — Sales ₱250,000 (25%)</td></tr>
+                                <tr><td class="text-muted-foreground pl-2">Product Incentive</td><td class="text-right">₱5,000</td></tr>
+                                <tr><td class="pl-4 text-muted-foreground">Shareholder A (60%)</td><td class="text-right text-amber-600">₱3,000</td></tr>
+                                <tr><td class="pl-4 text-muted-foreground">Shareholder B (40%)</td><td class="text-right text-amber-600">₱2,000</td></tr>
+                                <tr class="border-t"><td colspan="2" class="text-xs font-semibold text-muted-foreground pt-2">Fries — Sales ₱100,000 (10%, no owners)</td></tr>
+                                <tr><td class="pl-2 text-muted-foreground">Product Incentive → Company</td><td class="text-right text-emerald-600">₱2,000</td></tr>
                             </tbody>
                         </table>
                     </div>
                 </div>
 
-                <!-- Shareholders -->
-                <div class="rounded-xl border bg-card shadow-sm p-5 space-y-2">
-                    <h3 class="font-bold text-sm flex items-center gap-2"><Users class="h-4 w-4" /> Shareholders</h3>
-                    <ul class="text-sm space-y-1 text-muted-foreground list-disc list-inside">
-                        <li>Add members and set each one's <strong class="text-foreground">ownership %</strong>.</li>
-                        <li>Total active ownership <strong class="text-foreground">cannot exceed 100%</strong> — the tool blocks it.</li>
-                        <li>Whatever isn't allocated automatically becomes the <strong class="text-foreground">company share</strong>.</li>
-                        <li>Set a member to <strong class="text-foreground">inactive</strong> to exclude them without deleting history.</li>
-                        <li>Every change is recorded in the audit log.</li>
-                    </ul>
+                <div class="rounded-xl border bg-card shadow-sm p-5 space-y-3">
+                    <h3 class="font-bold text-sm">Setup steps</h3>
+                    <ol class="text-sm space-y-2 list-decimal list-inside text-muted-foreground">
+                        <li><strong class="text-foreground">Add shareholders</strong> — go to Shareholders tab and enter each shareholder's name and equity %.</li>
+                        <li><strong class="text-foreground">Set incentive rate</strong> — go to Incentives tab, add a rule (e.g. "2% of Gross Sales").</li>
+                        <li><strong class="text-foreground">Assign product owners</strong> — in the same Incentives tab, find each product and click Edit to assign shareholders with ownership percentages (must sum to 100%).</li>
+                        <li><strong class="text-foreground">Compute</strong> — go to Distribution tab and click Compute for your chosen period.</li>
+                        <li><strong class="text-foreground">Snapshot</strong> — click Snapshot before paying out to create a permanent record.</li>
+                    </ol>
                 </div>
 
-                <!-- Royalties -->
-                <div class="rounded-xl border bg-card shadow-sm p-5 space-y-2">
-                    <h3 class="font-bold text-sm flex items-center gap-2"><Percent class="h-4 w-4" /> Royalties</h3>
-                    <ul class="text-sm space-y-1 text-muted-foreground list-disc list-inside">
-                        <li>A rule pays a recipient a % of a product's or category's net sales.</li>
-                        <li><code class="bg-muted px-1 rounded">Royalty = Product Net Sales × Royalty %</code> (e.g. ₱500,000 × 5% = ₱25,000).</li>
-                        <li>Recipients are <strong class="text-foreground">dynamic</strong> — any name, optionally linked to a member.</li>
-                        <li>Each rule has an <strong class="text-foreground">effective date</strong> and optional <strong class="text-foreground">expiration</strong>.</li>
-                        <li>Royalties are deducted before member shares are calculated.</li>
-                    </ul>
-                </div>
-
-                <!-- Tips -->
                 <div class="rounded-xl border bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800 p-5 space-y-2 lg:col-span-2">
                     <h3 class="font-bold text-sm text-amber-800 dark:text-amber-300">Tips</h3>
                     <ul class="text-sm space-y-1 text-amber-800/90 dark:text-amber-300/90 list-disc list-inside">
-                        <li>Use the <strong>Month / Quarter / Year</strong> shortcuts for quick periods, or pick a custom range.</li>
-                        <li>Only <strong>paid</strong> orders count toward sales — matching your Financial reports.</li>
-                        <li>Click <strong>Snapshot</strong> to freeze a period's result for audit and historical comparison.</li>
-                        <li>Use <strong>CSV</strong> to export the current breakdown for payouts or accounting.</li>
-                        <li>The <strong>Trends</strong> tab shows month-over-month member, company, and royalty earnings.</li>
+                        <li>Use <strong>This Week</strong> shortcut for weekly settlements, <strong>Month</strong> for monthly.</li>
+                        <li>Only <strong>paid</strong> orders count — matching your Financial reports.</li>
+                        <li>A product can be owned by multiple shareholders as long as the percentages total exactly 100%.</li>
+                        <li>Products with no assigned owners are automatically company-owned (their incentive share is retained).</li>
+                        <li>Multiple incentive rules stack — their pools are added together before distribution.</li>
                     </ul>
                 </div>
             </div>
