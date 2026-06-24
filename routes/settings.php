@@ -57,6 +57,13 @@ Route::middleware(['auth'])->group(function () {
         ->name('settings.kitchen.update')
         ->middleware('role:admin');
 
+    Route::get('settings/hris', [\App\Http\Controllers\Settings\HrisSettingsController::class, 'edit'])
+        ->name('settings.hris')
+        ->middleware('role:admin');
+    Route::post('settings/hris', [\App\Http\Controllers\Settings\HrisSettingsController::class, 'update'])
+        ->name('settings.hris.update')
+        ->middleware('role:admin');
+
     Route::get('settings/system', [SystemController::class, 'index'])
         ->name('settings.system')
         ->middleware('role:admin');
