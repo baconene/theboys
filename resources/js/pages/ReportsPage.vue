@@ -7,6 +7,7 @@ import {
     BarChart3, Download, RefreshCw, TrendingUp, TrendingDown,
     DollarSign, Plus, X, Search, ChevronLeft, ChevronRight, ChevronDown,
     ShoppingBag, ClipboardList, Package, Trash2, Pencil, CalendarDays,
+    ArrowUp, ArrowDown, ChevronsUpDown,
 } from 'lucide-vue-next'
 import AnalyticsTab from '@/pages/reports/AnalyticsTab.vue'
 
@@ -46,7 +47,8 @@ interface FtTransaction {
 interface OrderRow {
     id: number; queue_number: number | null; order_type: string; status: string
     payment_status: string; table_number: string | null; notes: string | null
-    total_amount: number; items: { data: any[] } | any[]; user?: { data?: any; name?: string }
+    customer_name: string | null; total_amount: number
+    items: { data: any[] } | any[]; user?: { data?: any; name?: string }
     created_at: string
 }
 interface InvTransaction {
@@ -81,9 +83,11 @@ const tabs: { key: Tab; label: string }[] = [
 ]
 
 // ── Daily / Monthly ────────────────────────────────────────────────────────────
-const today = new Date().toISOString().split('T')[0]
-const thirtyDaysAgo = new Date(Date.now() - 30 * 86400_000).toISOString().split('T')[0]
-const selectedDate = ref(today)
+const toManilaDate = (d: Date) => d.toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' })
+const manilaToday = () => toManilaDate(new Date())
+const daysAgo = (n: number) => toManilaDate(new Date(Date.now() - n * 864e5))
+const manilaMonthStart = () => { const d = new Date(); return toManilaDate(new Date(d.getFullYear(), d.getMonth(), 1)) }
+const selectedDate = ref(manilaToday())
 const selectedYear = ref(new Date().getFullYear())
 const selectedMonth = ref(new Date().getMonth() + 1)
 const dailyReport = ref<DailyReport | null>(props.initialDailyReport)
@@ -120,23 +124,36 @@ const loadFtBreakdown = async (startDate: string, endDate: string) => {
 
 // ── Products ───────────────────────────────────────────────────────────────────
 const productSales = ref<ProductSale[]>(props.initialProductSales)
-const prodDateFrom = ref(new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0])
-const prodDateTo = ref(today)
+const prodDateFrom = ref(manilaMonthStart())
+const prodDateTo = ref(manilaToday())
 
 // ── Orders ─────────────────────────────────────────────────────────────────────
 const ordSearch = ref('')
-const ordDateFrom = ref(thirtyDaysAgo)
-const ordDateTo = ref(today)
+const ordDateFrom = ref(daysAgo(30))
+const ordDateTo = ref(manilaToday())
 const ordStatus = ref('')
 const ordPayment = ref('')
 const ordersData = ref<OrderRow[]>([])
 const ordersMeta = ref<any>(null)
+const ordersSummary = ref<{ total_count: number; paid_count: number; unpaid_count: number; paid_revenue: number } | null>(null)
 const ordPage = ref(1)
+const ordSortBy = ref('created_at')
+const ordSortDir = ref<'asc' | 'desc'>('desc')
 const ordDeleting = ref<number | null>(null)
 
+const sortOrders = (col: string) => {
+    if (ordSortBy.value === col) {
+        ordSortDir.value = ordSortDir.value === 'asc' ? 'desc' : 'asc'
+    } else {
+        ordSortBy.value = col
+        ordSortDir.value = col === 'total_amount' ? 'desc' : 'asc'
+    }
+    loadOrders(1)
+}
+
 // ── Inventory transactions ─────────────────────────────────────────────────────
-const invDateFrom = ref(thirtyDaysAgo)
-const invDateTo = ref(today)
+const invDateFrom = ref(daysAgo(30))
+const invDateTo = ref(manilaToday())
 const invType = ref('')
 const invIngredientId = ref('')
 const invTransactions = ref<InvTransaction[]>([])
@@ -184,8 +201,8 @@ interface BillForecast {
     total_forecast: number; months: number
 }
 
-const plStartDate = ref(new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0])
-const plEndDate = ref(today)
+const plStartDate = ref(manilaMonthStart())
+const plEndDate = ref(manilaToday())
 const plIncludeCogs = ref(true)
 const plReport     = ref<PL | null>(null)
 
@@ -247,7 +264,7 @@ interface HeatmapData {
 }
 
 const hmDateFrom  = ref(new Date(new Date().setDate(new Date().getDate() - 89)).toISOString().slice(0, 10))
-const hmDateTo    = ref(today)
+const hmDateTo    = ref(manilaToday())
 const hmData      = ref<HeatmapData | null>(null)
 const hmLoading   = ref(false)
 const hmTooltip   = ref<{ slot: HeatmapSlot; x: number; y: number } | null>(null)
@@ -303,8 +320,8 @@ const loadHeatmap = async () => {
 }
 
 // ── Financial ─────────────────────────────────────────────────────────────────
-const ftStartDate = ref(thirtyDaysAgo)
-const ftEndDate = ref(today)
+const ftStartDate = ref(daysAgo(30))
+const ftEndDate = ref(manilaToday())
 const ftTypeFilter = ref('')
 const ftSummary = ref<FtSummary | null>(null)
 const ftTransactions = ref<FtTransaction[]>([])
@@ -516,12 +533,14 @@ const loadOrders = async (page = 1) => {
     const res = await api.get('/api/v1/orders', {
         params: {
             page,
-            per_page: 50,
+            per_page: 20,
             search: ordSearch.value || undefined,
             date_from: ordDateFrom.value || undefined,
             date_to: ordDateTo.value || undefined,
             status: ordStatus.value || undefined,
             payment_status: ordPayment.value || undefined,
+            sort_by: ordSortBy.value,
+            sort_dir: ordSortDir.value,
         },
     })
     ordersData.value = (res.data.data ?? []).map((o: any) => ({
@@ -529,6 +548,7 @@ const loadOrders = async (page = 1) => {
         total_amount: parseFloat(o.total_amount ?? 0),
     }))
     ordersMeta.value = res.data.meta ?? null
+    ordersSummary.value = res.data.summary ?? null
 }
 
 const editOrder = (order: OrderRow) => router.visit('/orders/' + order.id)
@@ -558,28 +578,51 @@ const loadInventory = async (page = 1) => {
             ingredient_id: invIngredientId.value || undefined,
         },
     })
-    invTransactions.value = res.data.data ?? []
-    invMeta.value = res.data.meta ?? null
+    const invRaw = res.data
+    invTransactions.value = invRaw.data ?? []
+    // Backend returns old-style pagination (keys at top level, no nested meta)
+    invMeta.value = invRaw.meta ?? (invRaw.current_page != null ? {
+        current_page: invRaw.current_page,
+        last_page: invRaw.last_page,
+        from: invRaw.from,
+        to: invRaw.to,
+        total: invRaw.total,
+    } : null)
 }
 
 const loadFinancial = async (page = 1) => {
     ftPage.value = page
-    const [summaryRes, listRes] = await Promise.all([
-        api.get('/api/v1/financial-transactions/summary', {
-            params: { start_date: ftStartDate.value, end_date: ftEndDate.value },
-        }),
-        api.get('/api/v1/financial-transactions', {
-            params: {
-                page,
-                start_date: ftStartDate.value,
-                end_date: ftEndDate.value,
-                type: ftTypeFilter.value || undefined,
-            },
-        }),
-    ])
-    ftSummary.value = summaryRes.data
-    ftTransactions.value = listRes.data.data ?? []
-    ftMeta.value = listRes.data
+    loading.value = true
+    try {
+        const [summaryRes, listRes] = await Promise.all([
+            api.get('/api/v1/financial-transactions/summary', {
+                params: { start_date: ftStartDate.value, end_date: ftEndDate.value },
+            }),
+            api.get('/api/v1/financial-transactions', {
+                params: {
+                    page,
+                    start_date: ftStartDate.value,
+                    end_date: ftEndDate.value,
+                    type: ftTypeFilter.value || undefined,
+                },
+            }),
+        ])
+        ftSummary.value = summaryRes.data
+        const ftRaw = listRes.data
+        ftTransactions.value = ftRaw.data ?? []
+        // Backend returns flat Laravel pagination (no nested meta key)
+        ftMeta.value = ftRaw.meta ?? (ftRaw.current_page != null ? {
+            current_page: ftRaw.current_page,
+            last_page: ftRaw.last_page,
+            from: ftRaw.from,
+            to: ftRaw.to,
+            total: ftRaw.total,
+        } : null)
+    } catch (err: any) {
+        toast.error(err.response?.data?.message ?? 'Failed to load financial records')
+    } finally {
+        loading.value = false
+    }
 }
 
 const loadPL = async () => {
@@ -1083,22 +1126,22 @@ onMounted(async () => {
 
         <!-- ── Orders ─────────────────────────────────────────────────────────── -->
         <template v-if="tab === 'orders'">
-            <div v-if="ordersMeta" class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div v-if="ordersSummary" class="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 <div class="rounded-xl border bg-card p-4 shadow-sm">
                     <p class="text-xs text-muted-foreground mb-1 flex items-center gap-1"><ClipboardList class="h-3 w-3" /> Total Orders</p>
-                    <p class="text-3xl font-black">{{ ordersMeta.total }}</p>
+                    <p class="text-3xl font-black">{{ ordersSummary.total_count }}</p>
                 </div>
                 <div class="rounded-xl border bg-card p-4 shadow-sm">
-                    <p class="text-xs text-muted-foreground mb-1">Paid (this page)</p>
-                    <p class="text-3xl font-black text-green-600">{{ ordersData.filter(o => o.payment_status === 'paid').length }}</p>
+                    <p class="text-xs text-muted-foreground mb-1">Paid Orders</p>
+                    <p class="text-3xl font-black text-green-600">{{ ordersSummary.paid_count }}</p>
                 </div>
                 <div class="rounded-xl border bg-card p-4 shadow-sm">
-                    <p class="text-xs text-muted-foreground mb-1">Unpaid (this page)</p>
-                    <p class="text-3xl font-black text-yellow-600">{{ ordersData.filter(o => o.payment_status === 'pending').length }}</p>
+                    <p class="text-xs text-muted-foreground mb-1">Unpaid Orders</p>
+                    <p class="text-3xl font-black text-yellow-600">{{ ordersSummary.unpaid_count }}</p>
                 </div>
                 <div class="rounded-xl border bg-card p-4 shadow-sm">
-                    <p class="text-xs text-muted-foreground mb-1 flex items-center gap-1"><TrendingUp class="h-3 w-3" /> Revenue (page)</p>
-                    <p class="text-xl font-black text-green-600">{{ fmt(ordersData.filter(o => o.payment_status === 'paid').reduce((s, o) => s + o.total_amount, 0)) }}</p>
+                    <p class="text-xs text-muted-foreground mb-1 flex items-center gap-1"><TrendingUp class="h-3 w-3" /> Total Revenue</p>
+                    <p class="text-xl font-black text-green-600">{{ fmt(ordersSummary.paid_revenue) }}</p>
                 </div>
             </div>
 
@@ -1134,11 +1177,12 @@ onMounted(async () => {
                                 </button>
                             </div>
                         </div>
-                        <!-- Row 2: date + type + table -->
+                        <!-- Row 2: date + type + table + customer -->
                         <div class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
                             <span>{{ fmtDatetime(order.created_at) }}</span>
                             <span class="rounded-full bg-muted px-2 py-0.5 font-medium">{{ orderTypeBadge(order.order_type) }}</span>
                             <span v-if="order.table_number">Table {{ order.table_number }}</span>
+                            <span v-if="order.customer_name" class="font-medium text-foreground">{{ order.customer_name }}</span>
                             <span>{{ itemCount(order.items) }} item{{ itemCount(order.items) !== 1 ? 's' : '' }}</span>
                         </div>
                         <!-- Row 3: status + payment badges -->
@@ -1159,20 +1203,56 @@ onMounted(async () => {
                         <thead class="bg-muted/50 text-muted-foreground text-xs uppercase tracking-wide">
                             <tr>
                                 <th class="px-4 py-3 text-left">Order</th>
-                                <th class="px-4 py-3 text-left">Date & Time</th>
+                                <th class="px-4 py-3 text-left cursor-pointer select-none hover:text-foreground"
+                                    @click="sortOrders('created_at')">
+                                    <span class="inline-flex items-center gap-1">Date & Time
+                                        <ArrowUp v-if="ordSortBy === 'created_at' && ordSortDir === 'asc'" class="h-3 w-3" />
+                                        <ArrowDown v-else-if="ordSortBy === 'created_at' && ordSortDir === 'desc'" class="h-3 w-3" />
+                                        <ChevronsUpDown v-else class="h-3 w-3 opacity-40" />
+                                    </span>
+                                </th>
                                 <th class="px-4 py-3 text-left">Type</th>
                                 <th class="px-4 py-3 text-left">Table</th>
+                                <th class="px-4 py-3 text-left cursor-pointer select-none hover:text-foreground"
+                                    @click="sortOrders('customer_name')">
+                                    <span class="inline-flex items-center gap-1">Customer
+                                        <ArrowUp v-if="ordSortBy === 'customer_name' && ordSortDir === 'asc'" class="h-3 w-3" />
+                                        <ArrowDown v-else-if="ordSortBy === 'customer_name' && ordSortDir === 'desc'" class="h-3 w-3" />
+                                        <ChevronsUpDown v-else class="h-3 w-3 opacity-40" />
+                                    </span>
+                                </th>
                                 <th class="px-4 py-3 text-center">Items</th>
-                                <th class="px-4 py-3 text-left">Status</th>
-                                <th class="px-4 py-3 text-left">Payment</th>
-                                <th class="px-4 py-3 text-right">Total</th>
+                                <th class="px-4 py-3 text-left cursor-pointer select-none hover:text-foreground"
+                                    @click="sortOrders('status')">
+                                    <span class="inline-flex items-center gap-1">Status
+                                        <ArrowUp v-if="ordSortBy === 'status' && ordSortDir === 'asc'" class="h-3 w-3" />
+                                        <ArrowDown v-else-if="ordSortBy === 'status' && ordSortDir === 'desc'" class="h-3 w-3" />
+                                        <ChevronsUpDown v-else class="h-3 w-3 opacity-40" />
+                                    </span>
+                                </th>
+                                <th class="px-4 py-3 text-left cursor-pointer select-none hover:text-foreground"
+                                    @click="sortOrders('payment_status')">
+                                    <span class="inline-flex items-center gap-1">Payment
+                                        <ArrowUp v-if="ordSortBy === 'payment_status' && ordSortDir === 'asc'" class="h-3 w-3" />
+                                        <ArrowDown v-else-if="ordSortBy === 'payment_status' && ordSortDir === 'desc'" class="h-3 w-3" />
+                                        <ChevronsUpDown v-else class="h-3 w-3 opacity-40" />
+                                    </span>
+                                </th>
+                                <th class="px-4 py-3 text-right cursor-pointer select-none hover:text-foreground"
+                                    @click="sortOrders('total_amount')">
+                                    <span class="inline-flex items-center justify-end gap-1">Total
+                                        <ArrowUp v-if="ordSortBy === 'total_amount' && ordSortDir === 'asc'" class="h-3 w-3" />
+                                        <ArrowDown v-else-if="ordSortBy === 'total_amount' && ordSortDir === 'desc'" class="h-3 w-3" />
+                                        <ChevronsUpDown v-else class="h-3 w-3 opacity-40" />
+                                    </span>
+                                </th>
                                 <th class="px-4 py-3 text-left">Notes</th>
                                 <th class="px-4 py-3 text-center">Actions</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y">
                             <tr v-for="order in ordersData" :key="order.id"
-                                @click="router.visit(`/orders/${order.id}`)"
+                                @click="router.visit(`/orders/${order.id}?back=/reports`)"
                                 class="hover:bg-muted/30 cursor-pointer transition-colors">
                                 <td class="px-4 py-3">
                                     <p class="font-bold text-primary">#{{ order.id }}</p>
@@ -1181,6 +1261,7 @@ onMounted(async () => {
                                 <td class="px-4 py-3 whitespace-nowrap text-muted-foreground text-xs">{{ fmtDatetime(order.created_at) }}</td>
                                 <td class="px-4 py-3"><span class="rounded-full bg-muted px-2 py-0.5 text-xs font-medium">{{ orderTypeBadge(order.order_type) }}</span></td>
                                 <td class="px-4 py-3 text-muted-foreground">{{ order.table_number ?? '—' }}</td>
+                                <td class="px-4 py-3 text-muted-foreground">{{ order.customer_name ?? '—' }}</td>
                                 <td class="px-4 py-3 text-center font-medium">{{ itemCount(order.items) }}</td>
                                 <td class="px-4 py-3"><span :class="['rounded-full px-2 py-0.5 text-xs font-semibold capitalize', statusBadge(order.status)]">{{ order.status }}</span></td>
                                 <td class="px-4 py-3"><span :class="['rounded-full px-2 py-0.5 text-xs font-semibold capitalize', payBadge(order.payment_status)]">{{ order.payment_status }}</span></td>
@@ -1631,20 +1712,19 @@ onMounted(async () => {
                         </tbody>
                     </table>
                 </div>
-
-                <div v-if="ftMeta" class="flex items-center justify-between px-4 py-3 border-t text-xs text-muted-foreground">
-                    <span>Page {{ ftMeta.current_page }} of {{ ftMeta.last_page }} &mdash; {{ ftMeta.total }} transactions</span>
-                    <div class="flex items-center gap-1">
-                        <button @click="loadFinancial(ftPage - 1)" :disabled="ftPage <= 1"
-                            class="rounded px-2 py-1 border hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed">
-                            <ChevronLeft class="h-3 w-3" />
-                        </button>
-                        <span class="px-2">{{ ftPage }}</span>
-                        <button @click="loadFinancial(ftPage + 1)" :disabled="ftPage >= ftMeta.last_page"
-                            class="rounded px-2 py-1 border hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed">
-                            <ChevronRight class="h-3 w-3" />
-                        </button>
-                    </div>
+                <div v-if="ftMeta && ftMeta.last_page > 1" class="flex items-center justify-between px-4 py-3 border-t">
+                    <button
+                        @click="loadFinancial(ftPage - 1)"
+                        :disabled="ftPage <= 1 || loading"
+                        class="flex items-center gap-1 rounded-lg border px-3 py-1.5 text-sm font-medium hover:bg-muted disabled:opacity-40">
+                        <ChevronLeft class="h-3.5 w-3.5" /> Prev
+                    </button>
+                    <span class="text-xs text-muted-foreground">Showing {{ ftMeta.from }}–{{ ftMeta.to }} of {{ ftMeta.total }}</span>
+                    <button
+                        @click="loadFinancial(ftPage + 1)"
+                        :disabled="ftPage >= ftMeta.last_page || loading"
+                        class="flex items-center gap-1 rounded-lg border px-3 py-1.5 text-sm font-medium hover:bg-muted disabled:opacity-40">
+                        Next <ChevronRight class="h-3.5 w-3.5" /></button>
                 </div>
             </div>
             <div v-else-if="!loading" class="rounded-xl border bg-card p-10 text-center shadow-sm text-muted-foreground text-sm">
