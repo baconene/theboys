@@ -3,7 +3,7 @@ import { ref, computed, onMounted } from 'vue'
 import { Head } from '@inertiajs/vue3'
 import { toast } from 'vue-sonner'
 import api from '@/utils/api'
-import { Database, Play, Table2, RefreshCw, ChevronRight, ChevronDown, Search, Download, KeyRound } from 'lucide-vue-next'
+import { Database, Play, Table2, RefreshCw, ChevronRight, ChevronDown, Search, Download, FileText, KeyRound } from 'lucide-vue-next'
 
 defineOptions({ layout: { breadcrumbs: [{ title: 'Dashboard', href: '/dashboard' }, { title: 'Tools', href: '/tools' }] } })
 
@@ -80,6 +80,39 @@ const exportCsv = () => {
     URL.revokeObjectURL(url)
 }
 
+const exportPdf = () => {
+    if (!result.value) return
+    const { columns, rows } = result.value
+    const c = (v: any) => v === null ? '' : typeof v === 'object' ? JSON.stringify(v) : String(v)
+
+    const th = columns.map(col => `<th>${col}</th>`).join('')
+    const tbody = rows.map(r =>
+        `<tr>${columns.map(col => `<td>${c(r[col])}</td>`).join('')}</tr>`
+    ).join('')
+
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>Query Result</title><style>
+        body{font-family:sans-serif;font-size:11px;margin:16px}
+        h2{font-size:13px;margin-bottom:8px}
+        p{font-size:10px;color:#666;margin-bottom:10px}
+        table{border-collapse:collapse;width:100%}
+        th{background:#f3f4f6;font-weight:600;text-align:left;padding:5px 8px;border:1px solid #d1d5db;white-space:nowrap}
+        td{padding:4px 8px;border:1px solid #e5e7eb;white-space:nowrap;max-width:300px;overflow:hidden;text-overflow:ellipsis}
+        tr:nth-child(even) td{background:#f9fafb}
+        @media print{@page{margin:1cm}}
+    </style></head><body>
+        <h2>Query Result</h2>
+        <p>${result.value.row_count} row(s) · ${result.value.elapsed_ms} ms${result.value.truncated ? ' · capped at 500' : ''}</p>
+        <table><thead><tr>${th}</tr></thead><tbody>${tbody}</tbody></table>
+    </body></html>`
+
+    const w = window.open('', '_blank', 'width=900,height=700')
+    if (!w) { toast.error('Popup blocked — allow popups for this site'); return }
+    w.document.write(html)
+    w.document.close()
+    w.focus()
+    w.print()
+}
+
 const cell = (v: any) => v === null ? '' : typeof v === 'object' ? JSON.stringify(v) : String(v)
 
 onMounted(loadTables)
@@ -89,6 +122,7 @@ onMounted(loadTables)
     <Head title="Tools — SQL Console" />
 
     <div class="flex flex-col lg:flex-row gap-4 h-[calc(100vh-7rem)]">
+        <!-- ── Table list sidebar ───────────────────────────────────────── -->
         <aside class="lg:w-64 shrink-0 rounded-xl border bg-card shadow-sm flex flex-col overflow-hidden">
             <div class="p-3 border-b flex items-center justify-between">
                 <h2 class="font-bold text-sm flex items-center gap-1.5"><Database class="h-4 w-4 text-primary" /> Tables</h2>
@@ -126,6 +160,7 @@ onMounted(loadTables)
             </div>
         </aside>
 
+        <!-- ── Editor + results ─────────────────────────────────────────── -->
         <div class="flex-1 flex flex-col gap-3 min-w-0">
             <div class="rounded-xl border bg-card shadow-sm overflow-hidden">
                 <div class="px-3 py-2 border-b flex items-center justify-between">
@@ -138,17 +173,22 @@ onMounted(loadTables)
                     class="w-full bg-background px-3 py-2 text-sm font-mono resize-y focus:outline-none" placeholder="SELECT * FROM …"></textarea>
             </div>
 
+            <!-- Error -->
             <div v-if="error" class="rounded-xl border border-red-200 dark:border-red-900/50 bg-red-50 dark:bg-red-950/20 p-3 text-sm text-red-700 dark:text-red-400 font-mono">
                 {{ error }}
             </div>
 
+            <!-- Results -->
             <div v-if="result" class="flex-1 rounded-xl border bg-card shadow-sm overflow-hidden flex flex-col min-h-0">
                 <div class="px-3 py-2 border-b flex items-center justify-between text-xs">
                     <span class="text-muted-foreground">
                         <strong class="text-foreground">{{ result.row_count }}</strong> row(s) · {{ result.elapsed_ms }} ms
                         <span v-if="result.truncated" class="text-amber-600 font-medium"> · capped at 500</span>
                     </span>
-                    <button v-if="result.rows.length" @click="exportCsv" class="flex items-center gap-1 rounded-lg border px-2 py-1 font-medium hover:bg-muted"><Download class="h-3 w-3" /> CSV</button>
+                    <div v-if="result.rows.length" class="flex items-center gap-1.5">
+                        <button @click="exportCsv" class="flex items-center gap-1 rounded-lg border px-2 py-1 font-medium hover:bg-muted"><Download class="h-3 w-3" /> CSV</button>
+                        <button @click="exportPdf" class="flex items-center gap-1 rounded-lg border px-2 py-1 font-medium hover:bg-muted"><FileText class="h-3 w-3" /> PDF</button>
+                    </div>
                 </div>
                 <div class="flex-1 overflow-auto">
                     <table v-if="result.rows.length" class="text-sm border-collapse w-max min-w-full">
