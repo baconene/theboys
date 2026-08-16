@@ -692,7 +692,8 @@ onMounted(async () => {
                         Tender / Account <span class="text-red-500">*</span>
                     </label>
                     <select v-model="entryForm.payment_tender_id"
-                        :class="['w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary', !entryForm.payment_tender_id ? 'border-red-300 dark:border-red-700' : '']">
+                        :class="['w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary',
+                            entryForm.payment_tender_id ? 'bg-background border-border' : 'bg-background border-red-400 text-muted-foreground']">
                         <option :value="null" disabled>— Select tender —</option>
                         <option v-for="t in tenders" :key="t.id" :value="t.id">{{ t.name }}</option>
                     </select>
