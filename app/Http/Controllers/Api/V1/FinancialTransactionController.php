@@ -164,7 +164,7 @@ class FinancialTransactionController extends Controller {
             'description'        => 'required|string|max:255',
             'notes'              => 'nullable|string',
             'transacted_at'      => 'nullable|date_format:Y-m-d\\TH:i',
-            'payment_tender_id'  => 'required|exists:payment_tenders,id',
+            'payment_tender_id'  => 'nullable|exists:payment_tenders,id',
         ]);
 
         \Log::info('💾 After validation', ['transacted_at' => $data['transacted_at'] ?? 'null', 'now' => now()->toDateTimeString()]);
@@ -190,6 +190,7 @@ class FinancialTransactionController extends Controller {
         }
 
         $data = $request->validate([
+            'type'              => 'sometimes|in:expense,income_adjustment,asset_deduction,payroll,payout_share',
             'amount'            => 'sometimes|numeric|min:0.01',
             'description'       => 'sometimes|string|max:255',
             'notes'             => 'nullable|string',
